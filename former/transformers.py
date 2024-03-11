@@ -6,97 +6,97 @@ from .modules import TransformerBlock
 
 from .util import d
 
+
 class GTransformer(nn.Module):
     """
     Transformer for generating text (character by character).
     """
 
-    def __init__(self, emb, heads, depth, seq_length, num_tokens, attention_type='default'):
+    def __init__(
+        self, emb, heads, depth, seq_length, num_tokens, attention_type="default"
+    ):
 
         super().__init__()
 
+        self.depth = depth
         self.num_tokens = num_tokens
-        self.token_embedding = nn.Embedding(embedding_dim=emb, num_embeddings=num_tokens)
-        self.pos_embedding = nn.Embedding(embedding_dim=emb, num_embeddings=(seq_length * 2 - 1 if attention_type=='relative' else seq_length))
-
+        self.token_embedding = nn.Embedding(
+            embedding_dim=emb, num_embeddings=num_tokens
+        )
+        self.pos_embedding = nn.Embedding(
+            embedding_dim=emb,
+            num_embeddings=(
+                seq_length * 2 - 1 if attention_type == "relative" else seq_length
+            ),
+        )
 
         tblocks = []
         for i in range(depth):
             tblocks.append(
-                TransformerBlock(emb=emb, heads=heads, seq_length=seq_length, mask=True, attention_type=attention_type, pos_embedding=self.pos_embedding))
+                TransformerBlock(
+                    emb=emb,
+                    heads=heads,
+                    seq_length=seq_length,
+                    mask=True,
+                    attention_type=attention_type,
+                    pos_embedding=self.pos_embedding,
+                )
+            )
 
         self.tblocks = nn.Sequential(*tblocks)
 
         self.toprobs = nn.Linear(emb, num_tokens)
 
-    def forward(self, x):
-        """
-        :param x: A (batch, sequence length) integer tensor of token indices.
-        :return: predicted log-probability vectors for each token based on the preceding tokens.
-        """
+    def forward(self, x, return_intermediate=False):
         tokens = self.token_embedding(x)
         b, t, e = tokens.size()
 
-        positions = self.pos_embedding(torch.arange(t, device=d()))[None, :, :].expand(b, t, e)
+        positions = self.pos_embedding(torch.arange(t, device=d()))[None, :, :].expand(
+            b, t, e
+        )
         x = tokens + positions
 
-        x = self.tblocks(x)
+        # Intermediate logits storage
+        intermediate_logits = None
 
-        x = self.toprobs(x.view(b*t, e)).view(b, t, self.num_tokens)
+        # Determine the 1/4th layer index
+        intermediate_layer_index = self.depth // 3
 
-        return F.log_softmax(x, dim=2)
+        for i, block in enumerate(self.tblocks):
+            x = block(x)
+            if i == intermediate_layer_index:
+                # Capture the intermediate logits
+                intermediate_logits = self.toprobs(x.view(b * t, e)).view(
+                    b, t, self.num_tokens
+                )
 
-class CTransformer(nn.Module):
-    """
-    Transformer for classifying sequences
-    """
+        final_logits = self.toprobs(x.view(b * t, e)).view(b, t, self.num_tokens)
 
-    def __init__(self, emb, heads, depth, seq_length, num_tokens, num_classes, max_pool=True, dropout=0.0, wide=False):
+        if return_intermediate:
+            return F.log_softmax(final_logits, dim=2), F.log_softmax(
+                intermediate_logits, dim=2
+            )
+        else:
+            return F.log_softmax(final_logits, dim=2)
+
+    def DistillLoss(y_true, y_pred_final, y_pred_intermediate, alpha=0.5, T=1):
         """
-        :param emb: Embedding dimension
-        :param heads: nr. of attention heads
-        :param depth: Number of transformer blocks
-        :param seq_length: Expected maximum sequence length
-        :param num_tokens: Number of tokens (usually words) in the vocabulary
-        :param num_classes: Number of classes.
-        :param max_pool: If true, use global max pooling in the last layer. If false, use global
-                         average pooling.
+        y_true: Ground truth labels.
+        y_pred_final: Logits from the final layer.
+        y_pred_intermediate: Logits from the intermediate layer.
+        alpha: Weighting factor for the distillation loss component.
+        T: Temperature for softening probabilities; typically > 1.
         """
-        super().__init__()
+        # Traditional Cross-Entropy Loss
+        ce_loss = F.cross_entropy(y_pred_intermediate, y_true)
 
-        self.num_tokens, self.max_pool = num_tokens, max_pool
+        # Distillation Loss (KL Divergence)
+        soft_pred_final = F.log_softmax(y_pred_final / T, dim=2)
+        soft_pred_intermediate = F.softmax(y_pred_intermediate / T, dim=2)
+        distillation_loss = F.kl_div(
+            soft_pred_intermediate, soft_pred_final.detach(), reduction="batchmean"
+        ) * (T * T)
 
-        self.token_embedding = nn.Embedding(embedding_dim=emb, num_embeddings=num_tokens)
-        self.pos_embedding = nn.Embedding(embedding_dim=emb, num_embeddings=seq_length)
-
-        tblocks = []
-        for i in range(depth):
-            tblocks.append(
-                TransformerBlock(emb=emb, heads=heads, seq_length=seq_length, mask=False, dropout=dropout))
-
-        self.tblocks = nn.Sequential(*tblocks)
-
-        self.toprobs = nn.Linear(emb, num_classes)
-
-        self.do = nn.Dropout(dropout)
-
-    def forward(self, x):
-        """
-        :param x: A batch by sequence length integer tensor of token indices.
-        :return: predicted log-probability vectors for each token based on the preceding tokens.
-        """
-        tokens = self.token_embedding(x)
-        b, t, e = tokens.size()
-
-        positions = self.pos_embedding(torch.arange(t, device=d()))[None, :, :].expand(b, t, e)
-        x = tokens + positions
-        x = self.do(x)
-
-        x = self.tblocks(x)
-
-        x = x.max(dim=1)[0] if self.max_pool else x.mean(dim=1) # pool over the time dimension
-
-        x = self.toprobs(x)
-
-        return F.log_softmax(x, dim=1)
-
+        # Combined Loss
+        total_loss = alpha * ce_loss + (1 - alpha) * distillation_loss
+        return total_loss

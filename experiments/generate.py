@@ -155,18 +155,11 @@ def go(arg):
         if torch.cuda.is_available():
             source, target = source.cuda(), target.cuda()
 
-        tic()
-        output = model(source)
-        t = toc()
+        # Get both final and intermediate logits
+        final_logits, intermediate_logits = model(source, return_intermediate=True)
 
-        loss = F.nll_loss(output.transpose(2, 1), target, reduction="mean")
-        tbw.add_scalar(
-            "transformer/train-loss",
-            float(loss.item()) * util.LOG2E,
-            i * arg.batch_size,
-            instances_seen,
-        )
-        tbw.add_scalar("transformer/time-forward", t, instances_seen)
+        # Calculate the custom loss
+        loss = GTransformer.DistillLoss(target, final_logits, intermediate_logits)
 
         loss.backward()
         if arg.gradient_clipping > 0.0:
