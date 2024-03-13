@@ -58,9 +58,9 @@ def sample_batch(data, length, batch_size):
 
 def sample_sequence(
     model,
-    seed_sequence,
-    context_size,
-    sequence_length=600,
+    seed,
+    max_context,
+    length=600,
     temperature=0.5,
     verbose=False,
 ):
@@ -81,19 +81,19 @@ def sample_sequence(
     print("Starting sequence generation...")
 
     # Detach the seed sequence from any previous computational graph and clone it to avoid modifying the original.
-    generated_sequence = seed_sequence.detach().clone()
+    generated_sequence = seed.detach().clone()
 
     # Print the seed sequence if verbose mode is on.
     if verbose:
         print("Seed sequence: [", end="", flush=True)
-        for token in seed_sequence:
+        for token in seed:
             print(str(chr(token)), end="", flush=True)
         print("]", end="", flush=True)
 
     # Generate new tokens one by one, up to the specified sequence length.
-    for _ in range(sequence_length - len(seed_sequence)):
+    for _ in range(length - len(seed)):
         # Take the last 'context_size' tokens as input for the model.
-        input_sequence = generated_sequence[-context_size:]
+        input_sequence = generated_sequence[-max_context:]
 
         # Get the model's prediction for the next token.
         logits = model(input_sequence[None, :])
@@ -214,7 +214,7 @@ if __name__ == "__main__":
         "--num-batches",
         dest="num_batches",
         help="Number of batches to train on.",
-        default=1000000,
+        default=10,
         type=int,
     )
     parser.add_argument(

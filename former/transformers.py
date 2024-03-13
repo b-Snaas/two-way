@@ -59,7 +59,7 @@ class GTransformer(nn.Module):
         # Intermediate logits storage
         intermediate_logits = None
 
-        # Determine the 1/4th layer index
+        # Determine the 1/3th layer index
         intermediate_layer_index = self.depth // 3
 
         for i, block in enumerate(self.tblocks):
@@ -80,23 +80,48 @@ class GTransformer(nn.Module):
             return F.log_softmax(final_logits, dim=2)
 
     def DistillLoss(y_true, y_pred_final, y_pred_intermediate, alpha=0.5, T=1):
-        """
-        y_true: Ground truth labels.
-        y_pred_final: Logits from the final layer.
-        y_pred_intermediate: Logits from the intermediate layer.
-        alpha: Weighting factor for the distillation loss component.
-        T: Temperature for softening probabilities; typically > 1.
-        """
+        print("Inputs:")
+        print("y_true shape:", y_true.shape)
+        print("y_pred_final shape:", y_pred_final.shape)
+        print("y_pred_intermediate shape:", y_pred_intermediate.shape)
+        print("alpha:", alpha)
+        print("T:", T)
+
         # Traditional Cross-Entropy Loss
         ce_loss = F.cross_entropy(y_pred_intermediate, y_true)
+        print("\nAfter Cross-Entropy Loss:")
+        print("ce_loss:", ce_loss.item())
 
         # Distillation Loss (KL Divergence)
-        soft_pred_final = F.log_softmax(y_pred_final / T, dim=2)
-        soft_pred_intermediate = F.softmax(y_pred_intermediate / T, dim=2)
+        soft_pred_final = F.log_softmax(y_pred_final / T, dim=1)
+        soft_pred_intermediate = F.softmax(y_pred_intermediate / T, dim=1)
+        print("\nAfter Softening Probabilities:")
+        print(
+            "soft_pred_final stats - mean:",
+            soft_pred_final.mean().item(),
+            "min:",
+            soft_pred_final.min().item(),
+            "max:",
+            soft_pred_final.max().item(),
+        )
+        print(
+            "soft_pred_intermediate stats - mean:",
+            soft_pred_intermediate.mean().item(),
+            "min:",
+            soft_pred_intermediate.min().item(),
+            "max:",
+            soft_pred_intermediate.max().item(),
+        )
+
         distillation_loss = F.kl_div(
             soft_pred_intermediate, soft_pred_final.detach(), reduction="batchmean"
         ) * (T * T)
+        print("\nAfter Distillation Loss:")
+        print("distillation_loss:", distillation_loss.item())
 
         # Combined Loss
         total_loss = alpha * ce_loss + (1 - alpha) * distillation_loss
+        print("\nFinal Combined Loss:")
+        print("total_loss:", total_loss.item())
+
         return total_loss
