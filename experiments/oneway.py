@@ -1,5 +1,5 @@
 from former import util, GTransformer
-from former.util import here, tic, toc
+from former.util import here
 import torch
 from torch import nn
 import torch.nn.functional as F
