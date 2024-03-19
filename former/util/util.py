@@ -3,9 +3,8 @@ import torch, os, time, math, tqdm, random, sys, gzip
 import torch.nn.functional as F
 import torch.distributions as dist
 
-from torch.utils.tensorboard import SummaryWriter
-
 import numpy as np
+
 
 def enwik8(path=None, n_train=int(90e6), n_valid=int(5e6), n_test=int(5e6)):
     """
@@ -20,12 +19,13 @@ def enwik8(path=None, n_train=int(90e6), n_valid=int(5e6), n_test=int(5e6)):
     :return:
     """
     if path is None:
-        path = here('data/enwik8.gz')
+        path = here("data/enwik8.gz")
 
-    with gzip.open(path) if path.endswith('.gz') else open(path) as file:
+    with gzip.open(path) if path.endswith(".gz") else open(path) as file:
         X = np.fromstring(file.read(n_train + n_valid + n_test), dtype=np.uint8)
         trX, vaX, teX = np.split(X, [n_train, n_train + n_valid])
         return torch.from_numpy(trX), torch.from_numpy(vaX), torch.from_numpy(teX)
+
 
 def enwik8_bytes(path=None, split=(90, 5, 5)):
     """
@@ -38,17 +38,20 @@ def enwik8_bytes(path=None, split=(90, 5, 5)):
     :return:
     """
 
-
     if path is None:
-        path = here('data/enwik8.gz')
+        path = here("data/enwik8.gz")
 
-    with gzip.open(path, 'r') if path.endswith('.gz') else open(path, 'rb') as file:
+    with gzip.open(path, "r") if path.endswith(".gz") else open(path, "rb") as file:
         all = file.read()
 
-        split = tuple(s/sum(split) for s in split)
+        split = tuple(s / sum(split) for s in split)
         split = tuple(int(s * len(all)) for s in split)
 
-        train, val, test = all[:split[0]], all[split[0]:split[0]+split[1]], all[split[0]+split[1]:]
+        train, val, test = (
+            all[: split[0]],
+            all[split[0] : split[0] + split[1]],
+            all[split[0] + split[1] :],
+        )
 
         return train, val, test
 
@@ -66,18 +69,22 @@ def enwik8_string(path=None, split=(90, 5, 5)):
     :return:
     """
 
-
     if path is None:
-        path = here('data/enwik8.gz')
+        path = here("data/enwik8.gz")
 
-    with gzip.open(path, 'rt') if path.endswith('.gz') else open(path, 'r') as file:
+    with gzip.open(path, "rt") if path.endswith(".gz") else open(path, "r") as file:
         all = file.read()
 
-        split = tuple(s/sum(split) for s in split)
+        split = tuple(s / sum(split) for s in split)
         split = tuple(int(s * len(all)) for s in split)
 
-        train, val, test = all[:split[0]], all[split[0]:split[0]+split[1]], all[split[0]+split[1]:]
+        train, val, test = (
+            all[: split[0]],
+            all[split[0] : split[0] + split[1]],
+            all[split[0] + split[1] :],
+        )
         return train, val, test
+
 
 def sample(lnprobs, temperature=1.0):
     """
@@ -96,7 +103,10 @@ def sample(lnprobs, temperature=1.0):
 
     return cd.sample()
 
-def sample_sequence(model, seed, max_context, length=600, temperature=0.5, verbose=False):
+
+def sample_sequence(
+    model, seed, max_context, length=600, temperature=0.5, verbose=False
+):
     """
     Sequentially samples a sequence from the model, token by token.
 
@@ -111,11 +121,11 @@ def sample_sequence(model, seed, max_context, length=600, temperature=0.5, verbo
 
     sequence = seed.detach().clone()
 
-    if verbose: # Print the seed, surrounded by square brackets
-        print('[', end='', flush=True)
+    if verbose:  # Print the seed, surrounded by square brackets
+        print("[", end="", flush=True)
         for c in seed:
-            print(str(chr(c)), end='', flush=True)
-        print(']', end='', flush=True)
+            print(str(chr(c)), end="", flush=True)
+        print("]", end="", flush=True)
 
     for _ in range(length):
 
@@ -129,12 +139,15 @@ def sample_sequence(model, seed, max_context, length=600, temperature=0.5, verbo
         c = sample(output[0, -1, :], temperature)
 
         if verbose:
-            print(str(chr(max(32, c))), end='', flush=True)
+            print(str(chr(max(32, c))), end="", flush=True)
 
-        sequence = torch.cat([sequence, c[None]], dim=0) # Append the sampled token to the sequence
+        sequence = torch.cat(
+            [sequence, c[None]], dim=0
+        )  # Append the sampled token to the sequence
 
     print()
     return seed
+
 
 def sample_batch(data, length, batch_size):
     """
@@ -153,9 +166,9 @@ def sample_batch(data, length, batch_size):
     starts = torch.randint(size=(batch_size,), low=0, high=data.size(0) - length - 1)
 
     # Slice out the input sequences
-    seqs_inputs  = [data[start:start + length] for start in starts]
+    seqs_inputs = [data[start : start + length] for start in starts]
     # -- the start index is the one we just sampled, and the end is exactly 'lentgh' positions after that.
-    seqs_target = [data[start + 1:start + length + 1] for start in starts]
+    seqs_target = [data[start + 1 : start + length + 1] for start in starts]
     # -- The target is the same sequence as input, except one character ahead (we are asking the model to predict the
     #    next character at each position)
 
@@ -165,6 +178,7 @@ def sample_batch(data, length, batch_size):
     # -- Note that we add a singleton dimenson to each vector, s[None.,:], and then concatenate along that dimension.
 
     return inputs, target
+
 
 def mask_(matrices, maskval=0.0, mask_diagonal=True):
     """
@@ -182,6 +196,7 @@ def mask_(matrices, maskval=0.0, mask_diagonal=True):
     indices = torch.triu_indices(h, w, offset=0 if mask_diagonal else 1)
     matrices[..., indices[0], indices[1]] = maskval
 
+
 def d(tensor=None):
     """
     Returns a device string either for the best available device,
@@ -190,17 +205,19 @@ def d(tensor=None):
     :return:
     """
     if tensor is None:
-        return 'cuda' if torch.cuda.is_available() else 'cpu'
-    return 'cuda' if tensor.is_cuda else 'cpu'
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    return "cuda" if tensor.is_cuda else "cpu"
+
 
 def here(subpath=None):
     """
     :return: the path in which the package resides (the directory containing the 'former' dir)
     """
     if subpath is None:
-        return os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+        return os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), '../..', subpath))
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "../..", subpath))
+
 
 def contains_nan(tensor):
     return bool((tensor != tensor).sum() > 0)
@@ -212,11 +229,13 @@ tics = []
 def tic():
     tics.append(time.time())
 
+
 def toc():
-    if len(tics)==0:
+    if len(tics) == 0:
         return None
     else:
-        return time.time()-tics.pop()
+        return time.time() - tics.pop()
+
 
 def slice_diag(matrix, l, dv=None):
     """
@@ -231,7 +250,7 @@ def slice_diag(matrix, l, dv=None):
 
     h, w = matrix.size(-2), matrix.size(-1)
 
-    assert w == 2 * l -1, f'(h, w)= {(h, w)}, l={l}'
+    assert w == 2 * l - 1, f"(h, w)= {(h, w)}, l={l}"
 
     rest = matrix.size()[:-2]
 
@@ -240,22 +259,23 @@ def slice_diag(matrix, l, dv=None):
 
     result = matrix.view(b, -1)
     result = torch.cat([result, torch.zeros(b, l, device=dv)], dim=1)
-    assert result.size() == (b, 2 * l * l), f'result.size() {result.size()}'
+    assert result.size() == (b, 2 * l * l), f"result.size() {result.size()}"
 
-    result = result.view(b, l, 2*l)
+    result = result.view(b, l, 2 * l)
     result = result[:, :, :l]
 
     result = result.view(*rest, h, l)
     return result
 
+
 # Used for converting between nats and bits
 LOG2E = math.log2(math.e)
 LOGE2 = math.log(2.0)
 
-def compute_compression(model, data, context, batch_size, verbose=False,
-                        tbw:SummaryWriter=None, tok=None, skip=0):
 
-
+def compute_compression(
+    model, data, context, batch_size, verbose=False, tok=None, skip=0
+):
     """
     Compute the _compression_ of a dataset under a model. That is, given a model, in how many bits could we represent
     the dataset. This requires us to turn a given probability distribution into a code for the outcomes.
@@ -281,24 +301,32 @@ def compute_compression(model, data, context, batch_size, verbose=False,
     target_indices = []
     i, ic = 0, 0
 
-    for current in tqdm.trange(skip, data.size(0)) if verbose else range(skip, data.size(0)):
+    for current in (
+        tqdm.trange(skip, data.size(0)) if verbose else range(skip, data.size(0))
+    ):
 
         # `current` is the character which we will ultimately predict
 
         fr = max(0, current - context)
         to = current + 1
 
-        instance = data[fr:to].to(torch.long) # the subsequence of the data to add to the batch
+        instance = data[fr:to].to(
+            torch.long
+        )  # the subsequence of the data to add to the batch
         # -- slice out an instance of size context + 1 (or shorter at the start of the data)
 
         # if tok is not None:
         #     print(instance[:-1], tok.decode(instance[:-1]))
         #     print(instance[-1:], tok.decode(instance[-1:]))
 
-        target_indices.append(instance.size(0) - 2) # index of the last element of the input to the model
+        target_indices.append(
+            instance.size(0) - 2
+        )  # index of the last element of the input to the model
 
         if instance.size(0) < context + 1:
-            assert skip < context # We shouldn't get here if we skip the first `context` characters
+            assert (
+                skip < context
+            )  # We shouldn't get here if we skip the first `context` characters
 
             # the index in the output tensor of the character we want to predict
             # -- It's context + 1, because we clip off the last token as a target
@@ -307,7 +335,9 @@ def compute_compression(model, data, context, batch_size, verbose=False,
             instance = torch.cat([instance, pad], dim=0)
             # -- the first tokens don't have enough tokens preceding them, so we pad them to the right size.
 
-            assert instance.size(0) == context + 1 # all instances should be `context` + 1 long
+            assert (
+                instance.size(0) == context + 1
+            )  # all instances should be `context` + 1 long
 
         if torch.cuda.is_available():
             instance = instance.cuda()
@@ -322,7 +352,7 @@ def compute_compression(model, data, context, batch_size, verbose=False,
 
             ti = torch.tensor(target_indices) + 1
             all = torch.cat(batch, dim=0)
-            inputs = all[:, :-1] # input
+            inputs = all[:, :-1]  # input
             target = all[torch.arange(b), ti]  # target values
 
             with torch.no_grad():
@@ -331,34 +361,40 @@ def compute_compression(model, data, context, batch_size, verbose=False,
                 output = model(inputs)
 
             if type(output) != torch.Tensor:
-                output = torch.log_softmax(output.logits, dim=2) # To make the method work for GPT2 models from Huggingface
+                output = torch.log_softmax(
+                    output.logits, dim=2
+                )  # To make the method work for GPT2 models from Huggingface
 
-            assert output.size()[:2] == (b, context), f'was: {output.size()}, should be {(b, context, -1)}'
+            assert output.size()[:2] == (
+                b,
+                context,
+            ), f"was: {output.size()}, should be {(b, context, -1)}"
 
             lnprobs = output[torch.arange(b, device=d()), target_indices, target]
             log2probs = lnprobs / LOGE2
             # -- The model produces natural logarithms of probabilities, but we need base-2 logarithms of the
             #    probabilities, since these give us bits.
 
-            if tbw is not None:
-                for j, lp in enumerate(log2probs):
-                    i += 1
-                    tbw.add_scalar('compression/bits-per-token', -lp, i)
-
-                    if tok is not None:
-                        nc = len(tok.decode(target[j]))
-                        ic += nc
-                        tbw.add_scalar('compression/bits-per-byte', -lp/nc, ic)
-
-            bits += - log2probs.sum() # Add the bits for each character (the negative log_2 probabilities) to the running total
+            bits += (
+                -log2probs.sum()
+            )  # Add the bits for each character (the negative log_2 probabilities) to the running total
             batch, target_indices = [], []  # clear the buffer
 
     if isinstance(bits, torch.Tensor):
         bits = bits.item()
 
-    return bits # total nr of bits used
+    return bits  # total nr of bits used
 
-def estimate_compression(model, data, nsamples, context, batch_size, verbose=False, model_produces_logits=False):
+
+def estimate_compression(
+    model,
+    data,
+    nsamples,
+    context,
+    batch_size,
+    verbose=False,
+    model_produces_logits=False,
+):
     """
     Estimates the compression by sampling random subsequences instead of predicting all characters.
 
@@ -392,10 +428,14 @@ def estimate_compression(model, data, nsamples, context, batch_size, verbose=Fal
         fr = max(0, current - context)
         to = current + 1
 
-        instance = data[fr:to].to(torch.long) # the subsequence of the data to add to the batch
+        instance = data[fr:to].to(
+            torch.long
+        )  # the subsequence of the data to add to the batch
         # -- slice out an instance of size context + 1 (or shorter at the start of the data)
 
-        target_indices.append(instance.size(0) - 2) # index of the last element of the context
+        target_indices.append(
+            instance.size(0) - 2
+        )  # index of the last element of the context
 
         if instance.size(0) < context + 1:
             # the index in the output tensor of the character we want to predict
@@ -405,7 +445,9 @@ def estimate_compression(model, data, nsamples, context, batch_size, verbose=Fal
             instance = torch.cat([instance, pad], dim=0)
             # -- the first tokens don't have enough tokens preceding them, so we pad them to the right size.
 
-            assert instance.size(0) == context + 1 # all instances should be `context` + 1 long
+            assert (
+                instance.size(0) == context + 1
+            )  # all instances should be `context` + 1 long
 
         if torch.cuda.is_available():
             instance = instance.cuda()
@@ -419,7 +461,7 @@ def estimate_compression(model, data, nsamples, context, batch_size, verbose=Fal
             b = len(batch)
 
             all = torch.cat(batch, dim=0)
-            inputs = all[:, :-1] # input
+            inputs = all[:, :-1]  # input
             target = all[:, -1]  # target values
 
             with torch.no_grad():
@@ -431,16 +473,23 @@ def estimate_compression(model, data, nsamples, context, batch_size, verbose=Fal
                     output = F.log_softmax(output, dim=-1)
 
             if type(output) != torch.Tensor:
-                output = torch.log_softmax(output.logits, dim=2) # To make the method work for GPT2 models from Huggingface
+                output = torch.log_softmax(
+                    output.logits, dim=2
+                )  # To make the method work for GPT2 models from Huggingface
 
-            assert output.size()[:2] == (b, context), f'was: {output.size()}, should be {(b, context, -1)}'
+            assert output.size()[:2] == (
+                b,
+                context,
+            ), f"was: {output.size()}, should be {(b, context, -1)}"
 
             lnprobs = output[torch.arange(b, device=d()), target_indices, target]
             log2probs = lnprobs * LOG2E
             # -- The model produces natural logarithms of probabilities, but we need base-2 logarithms of the
             #    probabilities, since these give us bits.
 
-            bits += - log2probs.sum() # Add the bits for each character (the negative log_2 probabilties) to the running total
+            bits += (
+                -log2probs.sum()
+            )  # Add the bits for each character (the negative log_2 probabilties) to the running total
             batch, target_indices = [], []  # clear the buffer
 
-    return bits.item() / nsamples # total nr of bits used
+    return bits.item() / nsamples  # total nr of bits used
