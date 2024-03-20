@@ -273,61 +273,81 @@ LOG2E = math.log2(math.e)
 LOGE2 = math.log(2.0)
 
 
-def compute_compression(
-    model, data, context, batch_size, verbose=True, tok=None, skip=0
-):
-    bits, total_bytes = 0.0, 0  # Initialize bits and total_bytes counter
-    batch = []
-    target_indices = []
+def compute_compression(model, data, context, batch_size):
+    """
+    Compute the _compression_ of a dataset under a model. That is, given a model, in how many bits could we represent
+    the dataset. This requires us to turn a given probability distribution into a code for the outcomes.
 
-    for current in (
-        tqdm.trange(skip, data.size(0)) if verbose else range(skip, data.size(0))
-    ):
+    See [this video](https://youtu.be/mSneVjDvzNQ) for an explanation.
+
+    :param model: A sequence-to-sequence model that takes as input a (sub) sequence of integers and produces a probability
+    distributuion on the output.
+    :param data: A singe list of integers representing the  data
+    :return: The result of the computation in "bits per byte". That is, how many bits does the compressed representation
+    spend on each byte (=ASCII character) of the raw data.
+    """
+
+    bits, tot = 0.0, 0
+    batch = []
+    # Buffer, every time it fills up, we run it through the model
+    # --- For the sake of speed we want to process the data in batches. For each token in the data, we make a
+    #     prediction based on all the `context` tokens before it. This means that for each subsequence in the batch, we
+    #     need to shift the start/end indices ahead by one token.
+    #
+    #     After we pass the batch through the model, we look at only the probabilities predicted for the last token.
+
+    for current in range(data.size(0)):
+
         fr = max(0, current - context)
         to = current + 1
 
-        instance = data[fr:to].to(torch.long)
-        target_indices.append(instance.size(0) - 2)
-
+        instance = data[fr:to].to(
+            torch.long
+        )  # the subsequence of the data to add to the batch
         if instance.size(0) < context + 1:
             pad = torch.zeros(size=(context + 1 - instance.size(0),), dtype=torch.long)
-            instance = torch.cat([instance, pad], dim=0)
+            instance = torch.cat([pad, instance], dim=0)
+            # -- the first tokens don't have enough tokens preceding them, so we pad them to the right size.
+
+            assert (
+                instance.size(0) == context + 1
+            )  # all instances should be `context` + 1 long
 
         if torch.cuda.is_available():
             instance = instance.cuda()
 
         batch.append(instance[None, :])
+        # -- We add a singleton dimension to concatenate along later.
 
         if len(batch) == batch_size or current == data.size(0) - 1:
+            # batch is full or we are at the last instance, run it through the model
+
             b = len(batch)
-            ti = torch.tensor(target_indices) + 1
+
             all = torch.cat(batch, dim=0)
-            inputs = all[:, :-1]
-            target = all[torch.arange(b), ti]
+            inputs = all[:, :-1]  # input
+            target = all[:, -1]  # target values
 
-            with torch.no_grad():
-                if next(model.parameters()).is_cuda:
-                    inputs = inputs.cuda()
-                output = model(inputs)
+            output = model(inputs)  # Call the model
 
-            # if output is tuple grab the first item of the tuple to be the output
+            # Check if the output is a tuple (multiple tensors) and use the first tensor (assuming it contains the logits)
+            if isinstance(output, tuple):
+                output = output[0]
 
-            output = output[0] if isinstance(output, tuple) else output
+            # Apply log softmax to the output tensor to get log probabilities
+            output = F.log_softmax(output, dim=-1)
 
-            if type(output) != torch.Tensor:
-                output = torch.log_softmax(output.logits, dim=2)
+            lnprobs = output[torch.arange(b, device=d()), -1, target]
+            log2probs = lnprobs * LOG2E
+            # -- The model produces natural logarithms of probabilities, but we need base-2 logarithms of the
+            #    probabilities, since these give us bits.
 
-            lnprobs = output[torch.arange(b, device=d()), target_indices, target]
-            log2probs = lnprobs / LOGE2
+            bits += (
+                -log2probs.sum()
+            )  # Add the bits for each character (the negative log_2 probabilties) to the running total
+            batch = []  # clear the buffer
 
-            bits += -log2probs.sum()
-            total_bytes += b  # Increment the total_bytes by the batch size
-            batch, target_indices = [], []
-
-    if isinstance(bits, torch.Tensor):
-        bits = bits.item()
-
-    return bits / total_bytes  # Return bits per byte
+    return bits / data.size(0)  # bits-per-byte
 
 
 def estimate_compression(
