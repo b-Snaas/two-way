@@ -204,6 +204,7 @@ def go(
     for i in tqdm.trange(num_batches):
         opt.zero_grad()
         source, target = sample_batch(data_train, length=context, batch_size=batch_size)
+        instances_seen += source.size(0)
 
         if torch.cuda.is_available():
             source, target = source.cuda(), target.cuda()
@@ -218,7 +219,7 @@ def go(
         # Log the loss (adjust as per your logging tool/preference)
         wandb.log(
             {"transformer/train-loss": float(loss.item()) * util.LOG2E},
-            step=i * batch_size,
+            step=instances_seen,
         )
 
         # Scale the loss and perform backward pass
