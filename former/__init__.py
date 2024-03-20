@@ -1,3 +1,3 @@
 from .modules import SelfAttention, TransformerBlock, Attention
 
-from .transformers import GTransformer
+from .transformers import GTransformer, DistGen

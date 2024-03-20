@@ -310,6 +310,10 @@ def compute_compression(
                     inputs = inputs.cuda()
                 output = model(inputs)
 
+            # if output is tuple grab the first item of the tuple to be the output
+
+            output = output[0] if isinstance(output, tuple) else output
+
             if type(output) != torch.Tensor:
                 output = torch.log_softmax(output.logits, dim=2)
 
@@ -433,3 +437,34 @@ def estimate_compression(
             batch, target_indices = [], []  # clear the buffer
 
     return bits.item() / nsamples  # total nr of bits used
+
+
+def distill_loss(output, target, doutput, gamma):
+    """
+    Compute the primary loss with mandatory distillation loss and target loss.
+
+    Parameters:
+    - output: The model's final output logits.
+    - target: The ground truth labels.
+    - doutput: The model's intermediate output logits used for distillation.
+    - gamma: Weight factor for the distillation and target losses.
+
+    Returns:
+    - The computed total loss.
+    """
+
+    # Primary loss computation
+    loss = F.cross_entropy(output.transpose(2, 1), target, reduction="mean")
+
+    # Compute distillation loss - how closely intermediate output mimics the final output
+    out = output.transpose(2, 1).detach()
+    outp = F.softmax(out, dim=1)
+    distill_loss = F.cross_entropy(doutput.transpose(2, 1), outp, reduction="mean")
+
+    # Compute target loss for distillation - how closely intermediate output mimics the ground truth
+    target_loss = F.cross_entropy(doutput.transpose(2, 1), target, reduction="mean")
+
+    # Combine primary loss with weighted distillation and target losses
+    loss += gamma * (distill_loss + target_loss)
+
+    return loss

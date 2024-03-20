@@ -1,4 +1,4 @@
-from former import util, GTransformer
+from former import util, DistGen
 from former.util import here
 import torch
 from torch import nn
@@ -103,7 +103,7 @@ def sample_sequence(
         input = sequence[-max_context:]
 
         # Run the current input through the model
-        output = model(input[None, :])
+        output, _ = model(input[None, :])
 
         # Sample the next token from the probabilitys at the last position of the output.
         c = sample(output[0, -1, :], temperature)
@@ -130,6 +130,7 @@ def go(
     num_heads=8,
     context=256,
     depth=12,
+    student_depth=4,
     seed=1,
     test_every=1500,
     test_subset=100000,
@@ -139,6 +140,7 @@ def go(
     lr_warmup=5000,
     sample_length=200,
     attention_type="default",
+    gamma=1,
 ):
 
     if seed < 0:
@@ -173,13 +175,14 @@ def go(
     )
 
     # create the model
-    model = GTransformer(
+    model = DistGen(
         emb=embedding_size,
         heads=num_heads,
         depth=depth,
         seq_length=context,
         num_tokens=NUM_TOKENS,
         attention_type=attention_type,
+        distpoint=student_depth,
     )
     if torch.cuda.is_available():
         model.cuda()
@@ -201,22 +204,21 @@ def go(
     for i in tqdm.trange(num_batches):
         opt.zero_grad()
         source, target = sample_batch(data_train, length=context, batch_size=batch_size)
-        instances_seen += source.size(0)
 
         if torch.cuda.is_available():
             source, target = source.cuda(), target.cuda()
 
         # Wrap the forward pass in an autocast context
         with autocast():
-            output = model(source)  # forward pass
-            loss = F.nll_loss(output.transpose(2, 1), target, reduction="mean")
+            output, doutput = model(
+                source
+            )  # Ensure model returns final and intermediate outputs
+            loss = util.distill_loss(output, target, doutput, gamma)
 
-        # Log the loss and forward pass time
+        # Log the loss (adjust as per your logging tool/preference)
         wandb.log(
-            {
-                "transformer/train-loss": float(loss.item()) * util.LOG2E,
-            },
-            step=instances_seen,
+            {"transformer/train-loss": float(loss.item()) * util.LOG2E},
+            step=i * batch_size,
         )
 
         # Scale the loss and perform backward pass
@@ -263,12 +265,8 @@ def go(
                 upto = data_test.size(0) if i == num_batches - 1 else test_subset
                 data_sub = data_test[:upto]
 
-                bits_per_byte = util.estimate_compression(
-                    model,
-                    data_sub,
-                    nsamples=nsamples,
-                    context=context,
-                    batch_size=test_batchsize,
+                bits_per_byte = util.compute_compression(
+                    model, data_sub, context=context, batch_size=test_batchsize
                 )
                 # -- Since we're not computing gradients, we can increase the batch size a little from what we used in
                 #    training.

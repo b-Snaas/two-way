@@ -64,3 +64,71 @@ class GTransformer(nn.Module):
         x = self.toprobs(x.view(b * t, e)).view(b, t, self.num_tokens)
 
         return F.log_softmax(x, dim=2)
+
+
+class DistGen(nn.Module):
+    """
+    Transformer for generating text (character by character).
+    """
+
+    def __init__(
+        self,
+        emb,
+        heads,
+        depth,
+        seq_length,
+        num_tokens,
+        attention_type="default",
+        distpoint=None,
+    ):
+        super().__init__()
+
+        self.num_tokens = num_tokens
+
+        self.token_embedding = nn.Embedding(
+            embedding_dim=emb, num_embeddings=num_tokens
+        )
+        self.pos_embedding = nn.Embedding(embedding_dim=emb, num_embeddings=seq_length)
+
+        self.toprobs = nn.Linear(emb, num_tokens)
+        self.toprobsdist = nn.Linear(emb, num_tokens)
+
+        self.distpoint = distpoint
+
+        tblocks = []
+        for _ in range(depth):
+            tblocks.append(
+                TransformerBlock(
+                    emb=emb,
+                    heads=heads,
+                    seq_length=seq_length,
+                    mask=True,
+                    attention_type=attention_type,
+                )
+            )
+
+        self.tblocks = nn.ModuleList(modules=tblocks)
+
+    def forward(self, x):
+        """
+        :param x: A (batch, sequence length) integer tensor of token indices.
+        :return: predicted log-probability vectors for each token based on the preceding tokens.
+        """
+        tokens = self.token_embedding(x)
+        b, t, e = tokens.size()
+
+        positions = self.pos_embedding(torch.arange(t, device=d()))[None, :, :].expand(
+            b, t, e
+        )
+        x = tokens + positions
+
+        di = None
+        for i, block in enumerate(self.tblocks):
+            x = block(x) + x
+            if i == self.distpoint:
+                di = x  # this is the output at the distillation point
+
+        x = self.toprobs(x)
+        y = None if di is None else self.toprobsdist(di)
+
+        return x, y
