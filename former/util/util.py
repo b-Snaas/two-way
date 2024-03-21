@@ -473,8 +473,8 @@ def distill_loss(output, target, doutput, gamma):
     - The computed total loss.
     """
 
-    # Primary loss computation
-    loss = F.cross_entropy(output.transpose(2, 1), target, reduction="mean")
+    # Teacher loss computation
+    teacher_loss = F.cross_entropy(output.transpose(2, 1), target, reduction="mean")
 
     # Compute distillation loss - how closely intermediate output mimics the final output
     out = output.transpose(2, 1).detach()
@@ -484,7 +484,10 @@ def distill_loss(output, target, doutput, gamma):
     # Compute target loss for distillation - how closely intermediate output mimics the ground truth
     target_loss = F.cross_entropy(doutput.transpose(2, 1), target, reduction="mean")
 
-    # Combine primary loss with weighted distillation and target losses
-    loss += gamma * (distill_loss + target_loss)
+    # Combine distillation and target losses to create the student loss
+    student_loss = distill_loss + target_loss
 
-    return loss
+    # Combine teacher and student loss for the backward pass
+    loss = teacher_loss + (gamma * student_loss)
+
+    return loss, teacher_loss, student_loss

@@ -214,11 +214,18 @@ def go(
             output, doutput = model(
                 source
             )  # Ensure model returns final and intermediate outputs
-            loss = util.distill_loss(output, target, doutput, gamma)
+            loss, teacher_loss, student_loss = util.distill_loss(
+                output, target, doutput, gamma
+            )
 
-        # Log the loss (adjust as per your logging tool/preference)
+        # Log the teacher and student loss
         wandb.log(
-            {"transformer/train-loss": float(loss.item()) * util.LOG2E},
+            {"transformer/train-loss": float(teacher_loss.item()) * util.LOG2E},
+            step=instances_seen,
+        )
+
+        wandb.log(
+            {"transformer/student-train-loss": float(student_loss.item()) * util.LOG2E},
             step=instances_seen,
         )
 
