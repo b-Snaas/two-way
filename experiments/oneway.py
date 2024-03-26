@@ -123,7 +123,8 @@ def go(
     num_batches=1_000_000,
     batch_size=32,
     data=None,
-    lr=0.0001,
+    lr_min=1e-4,
+    lr_max=1e-3,
     tb_dir="./runs",
     final=False,
     embedding_size=128,
@@ -137,10 +138,9 @@ def go(
     nsamples=64,
     test_batchsize=64,
     gradient_clipping=1.0,
-    lr_warmup=5000,
     sample_length=200,
     attention_type="default",
-    gamma=1,
+    gamma=1.0,
 ):
 
     if seed < 0:
@@ -152,18 +152,18 @@ def go(
     wandb.init(
         project="your_project_name",
         config={
-            "learning_rate": lr,
+            "min_learning_rate": lr_min,
+            "max_learning_rate": lr_max,
             "batch_size": batch_size,
             "embedding_size": embedding_size,
             "num_heads": num_heads,
             "context": context,
             "depth": depth,
+            "student_depth": student_depth,
             "seed": seed,
             "gradient_clipping": gradient_clipping,
-            "lr_warmup": lr_warmup,
         },
     )
-
     # load the data (validation unless final is true, then test)
     data = here("data/enwik8.gz") if data is None else data
 
@@ -187,17 +187,23 @@ def go(
     if torch.cuda.is_available():
         model.cuda()
 
-    opt = torch.optim.Adam(lr=lr, params=model.parameters())
+    # Replace the optimizer's learning rate with the minimum learning rate
+    opt = torch.optim.Adam(lr=lr_min, params=model.parameters())
 
-    # Linear learning rate warmup
-    sch = torch.optim.lr_scheduler.LambdaLR(
-        opt, lambda i: min(i / (lr_warmup / batch_size), 1.0)
+    # Replace the existing scheduler with OneCycleLR
+    sch = torch.optim.lr_scheduler.OneCycleLR(
+        optimizer=opt,
+        max_lr=lr_max,
+        total_steps=num_batches,
+        pct_start=0.5,
+        final_div_factor=(lr_max / lr_min),
     )
 
     # Training loop
     # -- We don't loop over the data, instead we sample a batch of random subsequences each time. This is not strictly
     #    better or worse as a training method, it's just a little simpler.
     #
+    # Training loop with distillation
     instances_seen = 0
     scaler = GradScaler()
 
@@ -214,18 +220,28 @@ def go(
             output, doutput = model(
                 source
             )  # Ensure model returns final and intermediate outputs
+
+            # Calculate the distillation loss weight which linearly increases over the first 20k batches
+            distill_loss_weight = min(gamma, i / 20000)
+
+            # Compute the combined loss with the scaling factor applied to the distillation loss
             loss, teacher_loss, student_loss = util.distill_loss(
-                output, target, doutput, gamma
+                output, target, doutput, distill_loss_weight
             )
 
-        # Log the teacher and student loss
+        # Log the teacher and student loss with the distillation loss weight applied
         wandb.log(
             {"transformer/train-loss": float(teacher_loss.item()) * util.LOG2E},
             step=instances_seen,
         )
 
         wandb.log(
-            {"transformer/student-train-loss": float(student_loss.item()) * util.LOG2E},
+            {
+                "transformer/student-train-loss": float(
+                    student_loss.item() * distill_loss_weight
+                )
+                * util.LOG2E
+            },
             step=instances_seen,
         )
 

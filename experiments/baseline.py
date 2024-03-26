@@ -123,7 +123,8 @@ def go(
     num_batches=1_000_000,
     batch_size=32,
     data=None,
-    lr=0.0001,
+    lr_min=1e-4,
+    lr_max=1e-3,
     tb_dir="./runs",
     final=False,
     embedding_size=128,
@@ -136,7 +137,6 @@ def go(
     nsamples=64,
     test_batchsize=64,
     gradient_clipping=1.0,
-    lr_warmup=5000,
     sample_length=200,
     attention_type="default",
 ):
@@ -150,7 +150,8 @@ def go(
     wandb.init(
         project="your_project_name",
         config={
-            "learning_rate": lr,
+            "min_learning_rate": lr_min,
+            "max_learning_rate": lr_max,
             "batch_size": batch_size,
             "embedding_size": embedding_size,
             "num_heads": num_heads,
@@ -158,7 +159,6 @@ def go(
             "depth": depth,
             "seed": seed,
             "gradient_clipping": gradient_clipping,
-            "lr_warmup": lr_warmup,
         },
     )
 
@@ -184,17 +184,20 @@ def go(
     if torch.cuda.is_available():
         model.cuda()
 
-    opt = torch.optim.Adam(lr=lr, params=model.parameters())
+    opt = torch.optim.Adam(lr=lr_min, params=model.parameters())
 
-    # Linear learning rate warmup
-    sch = torch.optim.lr_scheduler.LambdaLR(
-        opt, lambda i: min(i / (lr_warmup / batch_size), 1.0)
+    # Replace the existing scheduler with OneCycleLR
+    sch = torch.optim.lr_scheduler.OneCycleLR(
+        optimizer=opt,
+        max_lr=lr_max,
+        total_steps=num_batches,  # Set total steps to num_batches to match your training loop
+        pct_start=0.5,  # Peak at 50% of the total steps (50k batches)
+        final_div_factor=(
+            lr_max / lr_min
+        ),  # Ratio of max_lr to min_lr defines final_div_factor
     )
 
     # Training loop
-    # -- We don't loop over the data, instead we sample a batch of random subsequences each time. This is not strictly
-    #    better or worse as a training method, it's just a little simpler.
-    #
     instances_seen = 0
     scaler = GradScaler()
 
@@ -211,7 +214,7 @@ def go(
             output = model(source)  # forward pass
             loss = F.nll_loss(output.transpose(2, 1), target, reduction="mean")
 
-        # Log the loss and forward pass time
+        # Log the loss
         wandb.log(
             {
                 "transformer/train-loss": float(loss.item()) * util.LOG2E,
@@ -233,6 +236,7 @@ def go(
         scaler.step(opt)
         scaler.update()
 
+        # Update the learning rate
         sch.step()
 
         # Validate every `test_every` steps. First we compute the
