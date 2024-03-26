@@ -112,23 +112,46 @@ class DistGen(nn.Module):
     def forward(self, x):
         """
         :param x: A (batch, sequence length) integer tensor of token indices.
-        :return: predicted log-probability vectors for each token based on the preceding tokens.
+        :return: predicted log-probability vectors for each token based on the preceding tokens,
+                and outputs at the distillation point, one layer above, and one layer below it.
         """
         tokens = self.token_embedding(x)
         b, t, e = tokens.size()
 
-        positions = self.pos_embedding(torch.arange(t, device=d()))[None, :, :].expand(
-            b, t, e
-        )
+        positions = self.pos_embedding(torch.arange(t, device=x.device))[
+            None, :, :
+        ].expand(b, t, e)
         x = tokens + positions
 
-        di = None
+        # Initialize outputs for the distillation point, one layer above, and one layer below
+        dist_output = None
+        dist_output_below = None
+        dist_output_above = None
+
         for i, block in enumerate(self.tblocks):
             x = block(x) + x
+
+            # Capture the output one layer below the distillation point
+            if i == self.distpoint - 1:
+                dist_output_below = x
+
+            # Capture the output at the distillation point
             if i == self.distpoint:
-                di = x  # this is the output at the distillation point
+                dist_output = x
+
+            # Capture the output one layer above the distillation point
+            if i == self.distpoint + 1:
+                dist_output_above = x
 
         x = self.toprobs(x)
-        y = None if di is None else self.toprobsdist(di)
 
-        return x, y
+        # Optionally, apply the top layer to the distillation outputs if needed
+        y_below = (
+            None if dist_output_below is None else self.toprobsdist(dist_output_below)
+        )
+        y = None if dist_output is None else self.toprobsdist(dist_output)
+        y_above = (
+            None if dist_output_above is None else self.toprobsdist(dist_output_above)
+        )
+
+        return x, y_below, y, y_above

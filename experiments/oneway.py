@@ -217,31 +217,21 @@ def go(
 
         # Wrap the forward pass in an autocast context
         with autocast():
-            output, doutput = model(
-                source
-            )  # Ensure model returns final and intermediate outputs
+            # Ensure model returns final output and intermediate outputs as a list
+            output, *y_outputs = model(source)
 
             # Calculate the distillation loss weight which linearly increases over the first 20k batches
             distill_loss_weight = min(gamma, i / 20000)
 
             # Compute the combined loss with the scaling factor applied to the distillation loss
-            loss, teacher_loss, student_loss = util.distill_loss(
-                output, target, doutput, distill_loss_weight
+            # Note: y_outputs is already a list of intermediate outputs
+            loss, teacher_loss, student_losses = util.distill_loss(
+                output, target, y_outputs, distill_loss_weight
             )
 
         # Log the teacher and student loss with the distillation loss weight applied
         wandb.log(
             {"transformer/train-loss": float(teacher_loss.item()) * util.LOG2E},
-            step=instances_seen,
-        )
-
-        wandb.log(
-            {
-                "transformer/student-train-loss": float(
-                    student_loss.item() * distill_loss_weight
-                )
-                * util.LOG2E
-            },
             step=instances_seen,
         )
 

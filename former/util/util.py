@@ -459,14 +459,14 @@ def estimate_compression(
     return bits.item() / nsamples  # total nr of bits used
 
 
-def distill_loss(output, target, doutput, gamma):
+def distill_loss(output, target, y_outputs, gamma):
     """
-    Compute the primary loss with mandatory distillation loss and target loss.
+    Compute the primary loss with mandatory distillation loss and target loss for multiple layers.
 
     Parameters:
     - output: The model's final output logits.
     - target: The ground truth labels.
-    - doutput: The model's intermediate output logits used for distillation.
+    - y_outputs: A list of the model's intermediate output logits at specified layers.
     - gamma: Weight factor for the distillation and target losses.
 
     Returns:
@@ -476,18 +476,21 @@ def distill_loss(output, target, doutput, gamma):
     # Teacher loss computation
     teacher_loss = F.cross_entropy(output.transpose(2, 1), target, reduction="mean")
 
-    # Compute distillation loss - how closely intermediate output mimics the final output
+    # Prepare the detached final output for computing distillation losses
     out = output.transpose(2, 1).detach()
     outp = F.softmax(out, dim=1)
-    distill_loss = F.cross_entropy(doutput.transpose(2, 1), outp, reduction="mean")
 
-    # Compute target loss for distillation - how closely intermediate output mimics the ground truth
-    target_loss = F.cross_entropy(doutput.transpose(2, 1), target, reduction="mean")
+    # Compute distillation losses for each y_output
+    distill_losses = []
+    for y in y_outputs:
+        # Compute distillation loss for the current intermediate output
+        distill_loss = F.cross_entropy(y.transpose(2, 1), outp, reduction="mean")
+        distill_losses.append(distill_loss)
 
-    # Combine distillation and target losses to create the student loss
-    student_loss = distill_loss + target_loss
+    # Combine distillation losses
+    student_loss = sum(distill_losses)
 
     # Combine teacher and student loss for the backward pass
     loss = teacher_loss + (gamma * student_loss)
 
-    return loss, teacher_loss, student_loss
+    return loss, teacher_loss, distill_losses
