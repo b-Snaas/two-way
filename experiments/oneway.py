@@ -131,7 +131,6 @@ def go(
     num_heads=8,
     context=128,
     depth=12,
-    student_depth=4,
     seed=1,
     test_every=1500,
     test_subset=100000,
@@ -159,7 +158,6 @@ def go(
             "num_heads": num_heads,
             "context": context,
             "depth": depth,
-            "student_depth": student_depth,
             "seed": seed,
             "gradient_clipping": gradient_clipping,
         },
@@ -182,7 +180,6 @@ def go(
         seq_length=context,
         num_tokens=NUM_TOKENS,
         attention_type=attention_type,
-        distpoint=student_depth,
     )
     if torch.cuda.is_available():
         model.cuda()

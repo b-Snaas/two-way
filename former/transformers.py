@@ -110,11 +110,6 @@ class DistGen(nn.Module):
         self.tblocks = nn.ModuleList(modules=tblocks)
 
     def forward(self, x):
-        """
-        :param x: A (batch, sequence length) integer tensor of token indices.
-        :return: predicted log-probability vectors for each token based on the preceding tokens,
-                and outputs at the distillation point, one layer above, and one layer below it.
-        """
         tokens = self.token_embedding(x)
         b, t, e = tokens.size()
 
@@ -123,35 +118,31 @@ class DistGen(nn.Module):
         ].expand(b, t, e)
         x = tokens + positions
 
-        # Initialize outputs for the distillation point, one layer above, and one layer below
-        dist_output = None
-        dist_output_below = None
-        dist_output_above = None
+        # Calculate the indices for the distillation points
+        quarter_depth = len(self.tblocks) // 4
+        dist_points = [quarter_depth - 1, 2 * quarter_depth - 1, 3 * quarter_depth - 1]
+
+        # Initialize outputs for the distillation points
+        dist_output_1st = None
+        dist_output_2nd = None
+        dist_output_3rd = None
 
         for i, block in enumerate(self.tblocks):
             x = block(x) + x
 
-            # Capture the output one layer below the distillation point
-            if i == self.distpoint - 1:
-                dist_output_below = x
-
-            # Capture the output at the distillation point
-            if i == self.distpoint:
-                dist_output = x
-
-            # Capture the output one layer above the distillation point
-            if i == self.distpoint + 1:
-                dist_output_above = x
+            # Capture the outputs at the distillation points
+            if i == dist_points[0]:
+                dist_output_1st = x
+            elif i == dist_points[1]:
+                dist_output_2nd = x
+            elif i == dist_points[2]:
+                dist_output_3rd = x
 
         x = self.toprobs(x)
 
         # Optionally, apply the top layer to the distillation outputs if needed
-        y_below = (
-            None if dist_output_below is None else self.toprobsdist(dist_output_below)
-        )
-        y = None if dist_output is None else self.toprobsdist(dist_output)
-        y_above = (
-            None if dist_output_above is None else self.toprobsdist(dist_output_above)
-        )
+        y_1st = None if dist_output_1st is None else self.toprobsdist(dist_output_1st)
+        y_2nd = None if dist_output_2nd is None else self.toprobsdist(dist_output_2nd)
+        y_3rd = None if dist_output_3rd is None else self.toprobsdist(dist_output_3rd)
 
-        return x, y_below, y, y_above
+        return x, y_1st, y_2nd, y_3rd
