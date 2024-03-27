@@ -127,9 +127,9 @@ def go(
     lr_max=1e-3,
     tb_dir="./runs",
     final=False,
-    embedding_size=128,
+    embedding_size=768,
     num_heads=8,
-    context=256,
+    context=128,
     depth=12,
     seed=1,
     test_every=1500,
@@ -190,11 +190,9 @@ def go(
     sch = torch.optim.lr_scheduler.OneCycleLR(
         optimizer=opt,
         max_lr=lr_max,
-        total_steps=num_batches,  # Set total steps to num_batches to match your training loop
-        pct_start=0.5,  # Peak at 50% of the total steps (50k batches)
-        final_div_factor=(
-            lr_max / lr_min
-        ),  # Ratio of max_lr to min_lr defines final_div_factor
+        total_steps=num_batches,
+        pct_start=0.5,
+        final_div_factor=(lr_max / lr_min),
     )
 
     # Training loop
