@@ -221,7 +221,7 @@ def go(
             output, *y_outputs = model(source)
 
             # Calculate the distillation loss weight which linearly increases over the first 20k batches
-            distill_loss_weight = min(gamma, i / 100000)
+            distill_loss_weight = min(gamma, i / 50000)
 
             # Compute the combined loss with the scaling factor applied to the distillation loss
             # Note: y_outputs is already a list of intermediate outputs
