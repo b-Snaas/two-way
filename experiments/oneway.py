@@ -124,7 +124,7 @@ def go(
     batch_size=32,
     data=None,
     lr_min=1e-4,
-    lr_max=1e-3,
+    lr_max=3e-4,
     tb_dir="./runs",
     final=False,
     embedding_size=768,
