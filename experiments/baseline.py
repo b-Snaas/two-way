@@ -237,6 +237,12 @@ def go(
         # Update the learning rate
         sch.step()
 
+        # Log the learning rate
+        wandb.log(
+            {"transformer/learning-rate": sch.get_last_lr()[0]},
+            step=instances_seen,
+        )
+
         # Validate every `test_every` steps. First we compute the
         # compression on the validation data (or a subset),
         # then we generate some random text to monitor progress.

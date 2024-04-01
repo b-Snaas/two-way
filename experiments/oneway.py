@@ -217,7 +217,7 @@ def go(
             # Ensure model returns final output and intermediate outputs as a list
             output, *y_outputs = model(source)
 
-            # Calculate the distillation loss weight which linearly increases over the first 20k batches
+            # Calculate the distillation loss weight which linearly increases over the first 50k batches
             distill_loss_weight = min(gamma, i / 50000)
 
             # Compute the combined loss with the scaling factor applied to the distillation loss
@@ -247,6 +247,12 @@ def go(
         scaler.update()
 
         sch.step()
+
+        # Log the learning rate
+        wandb.log(
+            {"transformer/learning-rate": sch.get_last_lr()[0]},
+            step=instances_seen,
+        )
 
         # Validate every `test_every` steps. First we compute the
         # compression on the validation data (or a subset),

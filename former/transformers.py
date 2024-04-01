@@ -119,13 +119,14 @@ class DistGen(nn.Module):
         x = tokens + positions
 
         # Calculate the indices for the distillation points
-        quarter_depth = len(self.tblocks) // 4
-        dist_points = [quarter_depth - 1, 2 * quarter_depth - 1, 3 * quarter_depth - 1]
+        fifth_depth = len(self.tblocks) // 5
+        dist_points = [fifth_depth - 1, 2 * fifth_depth - 1, 3 * fifth_depth - 1, 4 * fifth_depth - 1]
 
         # Initialize outputs for the distillation points
         dist_output_1st = None
         dist_output_2nd = None
         dist_output_3rd = None
+        dist_output_4th = None
 
         for i, block in enumerate(self.tblocks):
             x = block(x) + x
@@ -137,12 +138,15 @@ class DistGen(nn.Module):
                 dist_output_2nd = x
             elif i == dist_points[2]:
                 dist_output_3rd = x
+            elif i == dist_points[3]:
+                dist_output_4th = x
 
         x = self.toprobs(x)
 
-        # Optionally, apply the top layer to the distillation outputs if needed
+        # Apply the top layer to the distillation outputs if needed
         y_1st = None if dist_output_1st is None else self.toprobsdist(dist_output_1st)
         y_2nd = None if dist_output_2nd is None else self.toprobsdist(dist_output_2nd)
         y_3rd = None if dist_output_3rd is None else self.toprobsdist(dist_output_3rd)
+        y_4th = None if dist_output_4th is None else self.toprobsdist(dist_output_4th)
 
-        return x, y_1st, y_2nd, y_3rd
+        return x, y_1st, y_2nd, y_3rd, y_4th
