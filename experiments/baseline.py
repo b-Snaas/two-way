@@ -125,6 +125,7 @@ def go(
     data=None,
     lr_min=1e-4,
     lr_max=3e-4,
+    peak=0.2,
     tb_dir="./runs",
     final=False,
     embedding_size=768,
@@ -191,7 +192,7 @@ def go(
         optimizer=opt,
         max_lr=lr_max,
         total_steps=num_batches,
-        pct_start=0.3,
+        pct_start=peak,
         final_div_factor=(lr_max / lr_min),
     )
 
