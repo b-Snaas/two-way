@@ -191,7 +191,7 @@ def go(
         optimizer=opt,
         max_lr=lr_max,
         total_steps=num_batches,
-        pct_start=0.5,
+        pct_start=0.3,
         final_div_factor=(lr_max / lr_min),
     )
 
