@@ -126,6 +126,7 @@ def go(
     lr_min=1e-4,
     lr_max=3e-4,
     peak=0.2,
+    anneal= "cos",
     tb_dir="./runs",
     final=False,
     embedding_size=768,
@@ -187,13 +188,13 @@ def go(
 
     opt = torch.optim.Adam(lr=lr_min, params=model.parameters())
 
-    # Replace the existing scheduler with OneCycleLR
     sch = torch.optim.lr_scheduler.OneCycleLR(
         optimizer=opt,
         max_lr=lr_max,
         total_steps=num_batches,
         pct_start=peak,
         final_div_factor=(lr_max / lr_min),
+        anneal_strategy=anneal
     )
 
     # Training loop
