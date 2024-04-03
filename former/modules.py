@@ -149,7 +149,7 @@ class TransformerBlock(nn.Module):
         mask,
         seq_length,
         ff_hidden_mult=4,
-        dropout=0.1,
+        dropout=0.0,
         attention_type="default",
         pos_embedding=None,
         sa_kwargs={},
