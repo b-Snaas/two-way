@@ -206,7 +206,19 @@ def go(
     instances_seen = 0
     scaler = GradScaler()
 
-    for i in tqdm.trange(num_batches):
+    dropout_schedule = {
+    50000: 0.05,  # Update dropout to 0.05 at 50k batches
+    100000: 0.1,  # Update dropout to 0.1 at 100k batches
+    150000: 0.15, # Update dropout to 0.15 at 150k batches
+    200000: 0.2   # Update dropout to 0.2 at 200k batches
+    }
+
+    for i in tqdm.trange(num_batches):    
+        if i in dropout_schedule:
+            new_dropout_rate = dropout_schedule[i]
+            for block in model.tblocks:
+                block.update_dropout(new_dropout_rate)
+                
         opt.zero_grad()
         source, target = sample_batch(data_train, length=context, batch_size=batch_size)
         instances_seen += source.size(0)

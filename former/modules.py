@@ -140,8 +140,6 @@ class Attention(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    """A straightforward transformer block."""
-
     def __init__(
         self,
         emb,
@@ -166,7 +164,8 @@ class TransformerBlock(nn.Module):
             nn.Linear(ff_hidden_mult * emb, emb),
         )
 
-        self.do = nn.Dropout(dropout)
+        self.dropout_rate = dropout
+        self.do = nn.Dropout(self.dropout_rate)
 
     def forward(self, x):
         attended = self.attention(x)
@@ -178,3 +177,7 @@ class TransformerBlock(nn.Module):
         x = self.do(x)
 
         return x
+
+    def update_dropout(self, dropout_rate):
+        self.dropout_rate = dropout_rate
+        self.do = nn.Dropout(self.dropout_rate)
