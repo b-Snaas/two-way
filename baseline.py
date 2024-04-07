@@ -1,4 +1,4 @@
-from former import util, DistGen
+from former import util, GTransformer
 from former.util import here
 import torch
 from torch import nn
@@ -103,7 +103,7 @@ def sample_sequence(
         input = sequence[-max_context:]
 
         # Run the current input through the model
-        output = model(input[None, :])[0]
+        output = model(input[None, :])
 
         # Sample the next token from the probabilitys at the last position of the output.
         c = sample(output[0, -1, :], temperature)
@@ -126,7 +126,7 @@ def go(
     lr_min=1e-4,
     lr_max=3e-4,
     peak=0.2,
-    anneal="cos",
+    anneal= "cos",
     tb_dir="./runs",
     final=False,
     embedding_size=768,
@@ -141,7 +141,6 @@ def go(
     gradient_clipping=1.0,
     sample_length=200,
     attention_type="default",
-    gamma=1.0,
 ):
 
     if seed < 0:
@@ -164,6 +163,7 @@ def go(
             "gradient_clipping": gradient_clipping,
         },
     )
+
     # load the data (validation unless final is true, then test)
     data = here("data/enwik8.gz") if data is None else data
 
@@ -175,7 +175,7 @@ def go(
     )
 
     # create the model
-    model = DistGen(
+    model = GTransformer(
         emb=embedding_size,
         heads=num_heads,
         depth=depth,
@@ -186,7 +186,6 @@ def go(
     if torch.cuda.is_available():
         model.cuda()
 
-    # Replace the optimizer's learning rate with the minimum learning rate
     opt = torch.optim.Adam(lr=lr_min, params=model.parameters())
 
     sch = torch.optim.lr_scheduler.OneCycleLR(
@@ -199,20 +198,13 @@ def go(
     )
 
     # Training loop
-    # -- We don't loop over the data, instead we sample a batch of random subsequences each time. This is not strictly
-    #    better or worse as a training method, it's just a little simpler.
-    #
-    # Training loop with distillation
     instances_seen = 0
     scaler = GradScaler()
 
     dropout_schedule = {
-    50000: 0.05,  # Update dropout to 0.05 at 50k batches
-    100000: 0.1,  # Update dropout to 0.1 at 100k batches
-    150000: 0.15, # Update dropout to 0.15 at 150k batches
-    200000: 0.2   # Update dropout to 0.2 at 200k batches
+    80000: 0.1,
     }
-
+    
     for i in tqdm.trange(num_batches):    
         if i in dropout_schedule:
             new_dropout_rate = dropout_schedule[i]
@@ -228,21 +220,14 @@ def go(
 
         # Wrap the forward pass in an autocast context
         with autocast():
-            # Ensure model returns final output and intermediate outputs as a list
-            output, *y_outputs = model(source)
+            output = model(source)  # forward pass
+            loss = F.nll_loss(output.transpose(2, 1), target, reduction="mean")
 
-            # Calculate the distillation loss weight which linearly increases over the first 50k batches
-            distill_loss_weight = min(gamma, i / 50000)
-
-            # Compute the combined loss with the scaling factor applied to the distillation loss
-            # Note: y_outputs is already a list of intermediate outputs
-            loss, teacher_loss, student_losses = util.distill_loss(
-                output, target, y_outputs, distill_loss_weight
-            )
-
-        # Log the teacher and student loss with the distillation loss weight applied
+        # Log the loss
         wandb.log(
-            {"transformer/train-loss": float(teacher_loss.item()) * util.LOG2E},
+            {
+                "transformer/train-loss": float(loss.item()) * util.LOG2E,
+            },
             step=instances_seen,
         )
 
@@ -260,6 +245,7 @@ def go(
         scaler.step(opt)
         scaler.update()
 
+        # Update the learning rate
         sch.step()
 
         # Log the learning rate
@@ -295,7 +281,6 @@ def go(
 
                 upto = data_test.size(0) if i == num_batches - 1 else test_subset
                 data_sub = data_test[:upto]
-
                 bits_per_byte = util.compute_compression(
                     model, data_sub, context=context, batch_size=test_batchsize
                 )
