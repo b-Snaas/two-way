@@ -193,7 +193,7 @@ def go(
         max_lr=lr_max,
         total_steps=num_batches,
         pct_start=peak,
-        final_div_factor=(lr_max / lr_min),
+        final_div_factor=1e10,
         anneal_strategy=anneal
     )
 
@@ -201,18 +201,18 @@ def go(
     instances_seen = 0
     scaler = GradScaler()
 
-    dropout_schedule = {
-    80000: 0.1,
-    }
+    # dropout_schedule = {
+    # 80000: 0.1,
+    # }
     
     # Initialize EMA losses very high
     ema_losses = [float('inf')] * 4
 
     for i in tqdm.trange(num_batches):    
-        if i in dropout_schedule:
-            new_dropout_rate = dropout_schedule[i]
-            for block in model.tblocks:
-                block.update_dropout(new_dropout_rate)
+        # if i in dropout_schedule:
+        #     new_dropout_rate = dropout_schedule[i]
+        #     for block in model.tblocks:
+        #         block.update_dropout(new_dropout_rate)
                 
         opt.zero_grad()
         source, target = sample_batch(data_train, length=context, batch_size=batch_size)
