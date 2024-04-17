@@ -16,4 +16,5 @@ from .util import (
     distill_loss,
     enwik8_string,
     enwik8_bytes,
+    compute_ema_losses
 )

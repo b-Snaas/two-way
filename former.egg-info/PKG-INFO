@@ -1,0 +1,8 @@
+Metadata-Version: 2.1
+Name: former
+Version: 0.1
+Summary: Educational implementation of self attention
+Home-page: http://www.peterbloem.nl/blog/transformers
+Author: Peter Bloem
+Author-email: former@peterbloem.nl
+License: MIT

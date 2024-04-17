@@ -1,0 +1,11 @@
+README.md
+setup.py
+former/__init__.py
+former/modules.py
+former/transformers.py
+former.egg-info/PKG-INFO
+former.egg-info/SOURCES.txt
+former.egg-info/dependency_links.txt
+former.egg-info/not-zip-safe
+former.egg-info/requires.txt
+former.egg-info/top_level.txt

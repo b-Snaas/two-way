@@ -494,3 +494,33 @@ def distill_loss(output, target, y_outputs, gamma):
     loss = teacher_loss + (gamma * student_loss)
 
     return loss, teacher_loss, distill_losses
+
+def ema_update(old, new, beta=0.99):
+    """ Update the exponential moving average (EMA) with a new data point. """
+    return beta * old + (1 - beta) * new
+
+def compute_ema_losses(outputs, target, ema_losses):
+    """
+    Compute the cross-entropy loss for each output, update the EMA of the losses,
+    and return both the computed losses and the updated EMA losses.
+    
+    Args:
+        outputs (list of torch.Tensor): A list of tensors, where each tensor
+            is the logits output from a different layer or distillation point.
+        target (torch.Tensor): The ground truth labels that correspond to the main task.
+        ema_losses (list of float): Current EMA loss values for each distillation point.
+
+    Returns:
+        tuple: A tuple containing:
+            - list of torch.Tensor: The computed cross-entropy losses for each output.
+            - list of float: Updated EMA loss values.
+    """
+    losses = []
+    for i, output in enumerate(outputs):
+        loss = F.cross_entropy(output.transpose(2, 1), target, reduction='mean')
+        losses.append(loss)
+        
+        # Update EMA for this output's loss
+        ema_losses[i] = ema_update(ema_losses[i], loss.item())
+
+    return losses, ema_losses

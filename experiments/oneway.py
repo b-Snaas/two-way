@@ -119,6 +119,10 @@ def sample_sequence(
     return seed
 
 
+def ema_update(old, new, beta=0.99):
+    return beta * old + (1 - beta) * new
+
+
 def go(
     num_batches=1_000_000,
     batch_size=32,
@@ -197,18 +201,14 @@ def go(
         final_div_factor=(lr_max / lr_min),
         anneal_strategy=anneal
     )
-
-    # Training loop
-    # -- We don't loop over the data, instead we sample a batch of random subsequences each time. This is not strictly
-    #    better or worse as a training method, it's just a little simpler.
-    #
-    # Training loop with distillation
     instances_seen = 0
     scaler = GradScaler()
 
     dropout_schedule = {
     80000: 0.1,
     }
+
+    ema_losses = [float('inf')] * 4
 
     for i in tqdm.trange(num_batches):    
         if i in dropout_schedule:
@@ -265,15 +265,9 @@ def go(
             step=instances_seen,
         )
 
-        # Validate every `test_every` steps. First we compute the
-        # compression on the validation data (or a subset),
-        # then we generate some random text to monitor progress.
         if i != 0 and (i % test_every == 0 or i == num_batches - 1):
             with torch.no_grad():
 
-                ## Sample and print a random sequence
-
-                # Slice a random seed from the test data, and sample a continuation from the model.
                 seedfr = random.randint(0, data_test.size(0) - context)
                 seed = data_test[seedfr : seedfr + context].to(torch.long)
 
@@ -296,16 +290,12 @@ def go(
                 bits_per_byte = util.compute_compression(
                     model, data_sub, context=context, batch_size=test_batchsize
                 )
-                # -- Since we're not computing gradients, we can increase the batch size a little from what we used in
-                #    training.
 
                 print(f"epoch{i}: {bits_per_byte:.4} bits per byte")
                 wandb.log(
                     {"transformer/validation-bits-per-byte": bits_per_byte},
                     step=instances_seen,
                 )
-
-                # -- 0.9 bit per byte is around the state of the art.
 
 
 if __name__ == "__main__":
