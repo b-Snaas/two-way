@@ -128,7 +128,7 @@ class DistGen(nn.Module):
         dist_output_3rd = None
 
         for i, block in enumerate(self.tblocks):
-            x = block(x) + x
+            x = block(x)
 
             # Capture the outputs at the distillation points
             if i == dist_points[0]:
