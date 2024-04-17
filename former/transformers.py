@@ -91,7 +91,9 @@ class DistGen(nn.Module):
         self.pos_embedding = nn.Embedding(embedding_dim=emb, num_embeddings=seq_length)
 
         self.toprobs = nn.Linear(emb, num_tokens)
-        # self.toprobsdist = nn.Linear(emb, num_tokens)
+        self.dist1 = nn.Linear(emb, num_tokens)
+        self.dist2 = nn.Linear(emb, num_tokens)
+        self.dist3 = nn.Linear(emb, num_tokens)
 
         self.distpoint = distpoint
 
@@ -139,9 +141,9 @@ class DistGen(nn.Module):
                 dist_output_3rd = x
 
         # Apply the top layer to the distillation outputs if needed
-        y_1st = None if dist_output_1st is None else self.toprobs(dist_output_1st)
-        y_2nd = None if dist_output_2nd is None else self.toprobs(dist_output_2nd)
-        y_3rd = None if dist_output_3rd is None else self.toprobs(dist_output_3rd)
+        y_1st = None if dist_output_1st is None else self.dist1(dist_output_1st)
+        y_2nd = None if dist_output_2nd is None else self.dist2(dist_output_2nd)
+        y_3rd = None if dist_output_3rd is None else self.dist3(dist_output_3rd)
 
         x = self.toprobs(x)
 
