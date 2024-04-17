@@ -495,7 +495,7 @@ def distill_loss(output, target, y_outputs, gamma):
 
     return loss, teacher_loss, distill_losses
 
-def ema_update(old, new, beta=0.99):
+def ema_update(old, new, beta=0.50):
     """ Update the exponential moving average (EMA) with a new data point. """
     return beta * old + (1 - beta) * new
 
@@ -520,7 +520,9 @@ def compute_ema_losses(outputs, target, ema_losses):
         loss = F.cross_entropy(output.transpose(2, 1), target, reduction='mean')
         losses.append(loss)
         
-        # Update EMA for this output's loss
-        ema_losses[i] = ema_update(ema_losses[i], loss.item())
+        if ema_losses[i] == float('inf'):
+            ema_losses[i] = loss.item()
+        else:
+            ema_losses[i] = ema_update(ema_losses[i], loss.item())
 
     return losses, ema_losses

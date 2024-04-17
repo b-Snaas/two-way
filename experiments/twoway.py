@@ -249,7 +249,6 @@ def go(
         # Add individual loss and EMA logs
         for idx, (loss, ema_loss) in enumerate(zip(losses, ema_losses)):
             log_data[f"transformer/train-loss-layer-{idx+1}"] = float(loss.item()) * util.LOG2E
-            log_data[f"transformer/ema-loss-layer-{idx+1}"] = ema_loss
 
         wandb.log(log_data, step=instances_seen)
 
