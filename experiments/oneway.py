@@ -208,8 +208,6 @@ def go(
     80000: 0.1,
     }
 
-    ema_losses = [float('inf')] * 4
-
     for i in tqdm.trange(num_batches):    
         if i in dropout_schedule:
             new_dropout_rate = dropout_schedule[i]
