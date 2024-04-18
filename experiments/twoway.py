@@ -103,7 +103,9 @@ def sample_sequence(
         input = sequence[-max_context:]
 
         # Run the current input through the model
-        output = model(input[None, :])
+        outputs = model(input[None, :])
+
+        output = outputs[-1]
 
         # Sample the next token from the probabilitys at the last position of the output.
         c = sample(output[0, -1, :], temperature)
@@ -247,7 +249,7 @@ def go(
             "transformer/learning-rate": sch.get_last_lr()[0],
         }
         # Add individual loss and EMA logs
-        for idx, (loss, ema_loss) in enumerate(zip(losses, ema_losses)):
+        for idx, loss in enumerate(losses):
             log_data[f"transformer/train-loss-layer-{idx+1}"] = float(loss.item()) * util.LOG2E
 
         wandb.log(log_data, step=instances_seen)

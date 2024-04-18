@@ -1,5 +1,5 @@
 from former import util, DistGen
-from former.util import here
+from former.util import here, compute_ema_losses
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -103,7 +103,9 @@ def sample_sequence(
         input = sequence[-max_context:]
 
         # Run the current input through the model
-        output = model(input[None, :])[0]
+        outputs = model(input[None, :])
+
+        output = outputs[-1]
 
         # Sample the next token from the probabilitys at the last position of the output.
         c = sample(output[0, -1, :], temperature)
@@ -208,6 +210,9 @@ def go(
     # 80000: 0.1,
     # }
 
+    # Initialize EMA losses very high
+    ema_losses = [float('inf')] * 4
+
     for i in tqdm.trange(num_batches):    
         # if i in dropout_schedule:
         #     new_dropout_rate = dropout_schedule[i]
@@ -224,7 +229,7 @@ def go(
         # Wrap the forward pass in an autocast context
         with autocast():
             # Ensure model returns final output and intermediate outputs as a list
-            output, *y_outputs = model(source)
+            outputs = model(source)
 
             # Calculate the distillation loss weight which linearly increases over the first 50k batches
             distill_loss_weight = min(gamma, i / 50000)
@@ -232,14 +237,15 @@ def go(
             # Compute the combined loss with the scaling factor applied to the distillation loss
             # Note: y_outputs is already a list of intermediate outputs
             loss, teacher_loss, student_losses = util.distill_loss(
-                output, target, y_outputs, distill_loss_weight
+                outputs[3], target, outputs[0:3], distill_loss_weight
             )
 
-        # Log the teacher and student loss with the distillation loss weight applied
-        wandb.log(
-            {"transformer/train-loss": float(teacher_loss.item()) * util.LOG2E},
-            step=instances_seen,
-        )
+            losses, ema_losses = compute_ema_losses(outputs, target, ema_losses)
+
+        # Add individual loss and EMA logs
+        for idx, loss in enumerate(losses):
+            wandb.log({f"transformer/train-loss-layer-{idx+1}": float(loss.item()) * util.LOG2E})
+
 
         # Scale the loss and perform backward pass
         scaler.scale(loss).backward()
