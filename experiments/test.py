@@ -281,7 +281,7 @@ def validate(model, data, num, context):
         return - log2probs.mean()
 
 def go(num_batches=1_000_000, batch_size=32, seed=1, data=None,
-       lr=3e-4, tb_dir='./runs', final=False, embedding=768, enrich_loss=False,
+       tb_dir='./runs', final=False, embedding=768, enrich_loss=False,
        num_heads = 8, context=512, depth=12, test_every=1_000, test_subset=100_000, val_batchsize=128,
        test_batchsize=64, gradient_clipping=1.0, sample_length=600, attention_type='default', distilltemp=2.0, warmup=0,
        distpoint=6, tags=None,
@@ -319,7 +319,7 @@ def go(num_batches=1_000_000, batch_size=32, seed=1, data=None,
     print(locals())
 
     wd = wandb.init(
-        project='self-distillation',
+        project='your_project_name',
         tags=tags,
         config=locals(),
         mode= 'disabled' if debug else 'online'
@@ -349,7 +349,7 @@ def go(num_batches=1_000_000, batch_size=32, seed=1, data=None,
 
     print(f'Training model.')
 
-    opt = torch.optim.Adam(lr=lr, params=model.parameters())
+    opt = torch.optim.Adam(lr=lr_min, params=model.parameters())
     sch = torch.optim.lr_scheduler.OneCycleLR(
         optimizer=opt,
         max_lr=lr_max,
