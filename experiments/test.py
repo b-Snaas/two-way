@@ -399,7 +399,7 @@ def go(num_batches=1_000_000, batch_size=32, seed=1, data=None,
         wandb.log({'loss': float(loss.item()) * util.LOG2E})
         if gamma is not None:
             wandb.log({'distill_loss': float(distill_loss.item()) * util.LOG2E})
-            wandb.log({'target_loss': float(loss.item()) * util.LOG2E})
+            wandb.log({'target_loss': float(target_loss.item()) * util.LOG2E})
             wandb.log({'total_loss': float(total_loss.item()) * util.LOG2E})
 
         # tbw.add_scalar('distill/train-loss', float(loss.item()) * LOG2E, instances_seen)
