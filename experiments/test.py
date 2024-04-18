@@ -8,6 +8,7 @@ from torch import nn
 from torch.autograd import Variable
 import torch.nn.functional as F
 import torch.distributions as dist
+from torch.cuda.amp import autocast, GradScaler
 
 import numpy as np
 
@@ -279,12 +280,12 @@ def validate(model, data, num, context):
 
         return - log2probs.mean()
 
-def go(batches=1_000_000, batch_size=32, seed=1, data=None,
+def go(num_batches=1_000_000, batch_size=32, seed=1, data=None,
        lr=3e-4, tb_dir='./runs', final=False, embedding=768, enrich_loss=False,
        num_heads = 8, context=512, depth=12, test_every=1_000, test_subset=100_000, val_batchsize=128,
        test_batchsize=64, gradient_clipping=1.0, sample_length=600, attention_type='default', distilltemp=2.0, warmup=0,
        distpoint=6, tags=None,
-       gamma=None, debug=False, distill_with_target=True):
+       gamma=None, debug=False, distill_with_target=True, lr_max=1e-3, lr_min=1e-5, peak=0.3, anneal='linear'):
 
     """
 
@@ -349,13 +350,21 @@ def go(batches=1_000_000, batch_size=32, seed=1, data=None,
     print(f'Training model.')
 
     opt = torch.optim.Adam(lr=lr, params=model.parameters())
-    if warmup > 0:
-        tsch = torch.optim.lr_scheduler.LambdaLR(opt, lambda i: min(i / (warmup / batch_size), 1.0))
+    sch = torch.optim.lr_scheduler.OneCycleLR(
+        optimizer=opt,
+        max_lr=lr_max,
+        total_steps=num_batches,
+        pct_start=peak,
+        final_div_factor=(lr_max / lr_min),
+        anneal_strategy=anneal
+    )
+    instances_seen = 0
+    scaler = GradScaler()
 
     if torch.cuda.is_available():
         model.cuda()
 
-    for i in trange(batches):
+    for i in trange(num_batches):
 
         opt.zero_grad()
 
@@ -365,7 +374,8 @@ def go(batches=1_000_000, batch_size=32, seed=1, data=None,
         if torch.cuda.is_available():
             source, target = source.cuda(), target.cuda()
 
-        output, doutput = model(source) # forward pass
+        with autocast():
+            output, doutput = model(source)
 
         # Compute the loss
         loss = F.cross_entropy(output.transpose(2, 1), target, reduction='mean')
@@ -397,18 +407,23 @@ def go(batches=1_000_000, batch_size=32, seed=1, data=None,
         # tbw.add_scalar('distill/ts', 0, instances_seen)
 
         if gamma is not None:
-            total_loss.backward() # backward pass
+            scaler.scale(total_loss).backward()
         else:
-            loss.backward() # backward pass
+            scaler.scale(loss).backward()
+
+        # Unscale the gradients before clipping
+        scaler.unscale_(opt)
 
         # clip gradients
         # -- If the total gradient vector has a length > x, we clip it back down to x.
         if gradient_clipping > 0.0:
             nn.utils.clip_grad_norm_(model.parameters(), gradient_clipping)
 
-        opt.step() # stochastic gradient descent step
-        if warmup > 0:
-              tsch.step()
+        # Scaler step and update
+        scaler.step(opt)
+        scaler.update()
+
+        sch.step()
 
         # lprobs = validate(model=teacher, data=data_val, num=val_batchsize, context=context)
         # tbw.add_scalar('distill/eval', lprobs, instances_seen)
