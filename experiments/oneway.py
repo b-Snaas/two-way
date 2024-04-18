@@ -103,9 +103,7 @@ def sample_sequence(
         input = sequence[-max_context:]
 
         # Run the current input through the model
-        outputs = model(input[None, :])
-
-        output = outputs[-1]
+        output = model(input[None, :])[3]
 
         # Sample the next token from the probabilitys at the last position of the output.
         c = sample(output[0, -1, :], temperature)
@@ -169,6 +167,7 @@ def go(
             "depth": depth,
             "seed": seed,
             "gradient_clipping": gradient_clipping,
+            "sep_layers": sep_layers,
         },
     )
     # load the data (validation unless final is true, then test)
@@ -251,6 +250,13 @@ def go(
 
         # Scale the loss and perform backward pass
         scaler.scale(loss).backward()
+
+            # Print gradient norms here
+        print(f"Batch {i+1}/{num_batches} Gradient Norms:")
+        for name, param in model.named_parameters():
+            if param.requires_grad and param.grad is not None:
+                print(f"{name}: {param.grad.norm().item()}")
+
 
         # Unscale the gradients before clipping
         scaler.unscale_(opt)
