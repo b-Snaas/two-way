@@ -377,22 +377,22 @@ def go(num_batches=1_000_000, batch_size=32, seed=1, data=None,
         with autocast():
             output, doutput = model(source)
 
-        # Compute the loss
-        loss = F.cross_entropy(output.transpose(2, 1), target, reduction='mean')
+            # Compute the loss
+            loss = F.cross_entropy(output.transpose(2, 1), target, reduction='mean')
 
-        if gamma is not None:
-            # - how closely it mimics the network output
-            out = output.transpose(2, 1).detach()
-            outp = F.softmax(out, dim=1)
-            distill_loss =  F.cross_entropy(doutput.transpose(2, 1), outp, reduction='mean')
+            if gamma is not None:
+                # - how closely it mimics the network output
+                out = output.transpose(2, 1).detach()
+                outp = F.softmax(out, dim=1)
+                distill_loss =  F.cross_entropy(doutput.transpose(2, 1), outp, reduction='mean')
 
-            # - how closely it mimics the training target
-            if distill_with_target:
-                target_loss = F.cross_entropy(doutput.transpose(2, 1),target, reduction='mean')
-            else:
-                target_loss = 0.0
+                # - how closely it mimics the training target
+                if distill_with_target:
+                    target_loss = F.cross_entropy(doutput.transpose(2, 1),target, reduction='mean')
+                else:
+                    target_loss = 0.0
 
-            total_loss = loss + gamma * (distill_loss + target_loss)
+                total_loss = loss + gamma * (distill_loss + target_loss)
 
         wandb.log({'gamma': gamma})
 
