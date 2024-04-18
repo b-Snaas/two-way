@@ -147,6 +147,7 @@ def go(
     gradient_clipping=1.0,
     sample_length=200,
     attention_type="default",
+    sep_layers=False,
     gamma=1.0,
 ):
 
@@ -188,6 +189,7 @@ def go(
         seq_length=context,
         num_tokens=NUM_TOKENS,
         attention_type=attention_type,
+        sep_layers=sep_layers,
     )
     if torch.cuda.is_available():
         model.cuda()
@@ -231,13 +233,13 @@ def go(
             # Ensure model returns final output and intermediate outputs as a list
             outputs = model(source)
 
-            # Calculate the distillation loss weight which linearly increases over the first 50k batches
-            distill_loss_weight = min(gamma, i / 50000)
+            # # Calculate the distillation loss weight which linearly increases over the first 50k batches
+            # distill_loss_weight = min(gamma, i / 50000)
 
             # Compute the combined loss with the scaling factor applied to the distillation loss
             # Note: y_outputs is already a list of intermediate outputs
             loss, teacher_loss, student_losses = util.distill_loss(
-                outputs[3], target, outputs[0:3], distill_loss_weight
+                outputs[3], target, outputs[0:3], gamma
             )
 
             losses, ema_losses = compute_ema_losses(outputs, target, ema_losses)

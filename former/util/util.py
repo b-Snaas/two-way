@@ -462,6 +462,8 @@ def estimate_compression(
 def distill_loss(output, target, y_outputs, gamma):
     """
     Compute the primary loss with mandatory distillation loss and target loss for multiple layers.
+    Student losses are computed as the average of distillation loss (comparison with the teacher output)
+    and direct loss (comparison with the ground truth).
 
     Parameters:
     - output: The model's final output logits.
@@ -485,7 +487,13 @@ def distill_loss(output, target, y_outputs, gamma):
     for y in y_outputs:
         # Compute distillation loss for the current intermediate output
         distill_loss = F.cross_entropy(y.transpose(2, 1), outp, reduction="mean")
-        distill_losses.append(distill_loss)
+
+        # Compute direct ground truth loss for the current intermediate output
+        ground_truth_loss = F.cross_entropy(y.transpose(2, 1), target, reduction="mean")
+
+        # Average the distillation and ground truth losses
+        combined_loss = 0.5 * distill_loss + 0.5 * ground_truth_loss
+        distill_losses.append(combined_loss)
 
     # Combine distillation losses
     student_loss = sum(distill_losses)
@@ -494,6 +502,7 @@ def distill_loss(output, target, y_outputs, gamma):
     loss = teacher_loss + (gamma * student_loss)
 
     return loss, teacher_loss, distill_losses
+
 
 def ema_update(old, new, beta=0.50):
     """ Update the exponential moving average (EMA) with a new data point. """

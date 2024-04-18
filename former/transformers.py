@@ -80,6 +80,7 @@ class DistGen(nn.Module):
         num_tokens,
         attention_type="default",
         distpoint=None,
+        sep_layers=False,
     ):
         super().__init__()
 
@@ -89,6 +90,8 @@ class DistGen(nn.Module):
             embedding_dim=emb, num_embeddings=num_tokens
         )
         self.pos_embedding = nn.Embedding(embedding_dim=emb, num_embeddings=seq_length)
+
+        self.sep_layers = sep_layers
 
         self.toprobs = nn.Linear(emb, num_tokens)
         self.dist1 = nn.Linear(emb, num_tokens)
@@ -140,10 +143,16 @@ class DistGen(nn.Module):
             elif i == dist_points[2]:
                 dist_output_3rd = x
 
-        # Apply the top layer to the distillation outputs if needed
-        y_1st = None if dist_output_1st is None else self.toprobs(dist_output_1st)
-        y_2nd = None if dist_output_2nd is None else self.toprobs(dist_output_2nd)
-        y_3rd = None if dist_output_3rd is None else self.toprobs(dist_output_3rd)
+        if self.sep_layers == True:
+            # Apply the top layer to the distillation outputs if needed
+            y_1st = None if dist_output_1st is None else self.dist1(dist_output_1st)
+            y_2nd = None if dist_output_2nd is None else self.dist2(dist_output_2nd)
+            y_3rd = None if dist_output_3rd is None else self.dist3(dist_output_3rd)
+        else:
+            # Apply the top layer to the distillation outputs if needed
+            y_1st = None if dist_output_1st is None else self.toprobs(dist_output_1st)
+            y_2nd = None if dist_output_2nd is None else self.toprobs(dist_output_2nd)
+            y_3rd = None if dist_output_3rd is None else self.toprobs(dist_output_3rd)
 
         x = self.toprobs(x)
 
