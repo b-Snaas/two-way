@@ -103,7 +103,7 @@ def sample_sequence(
         input = sequence[-max_context:]
 
         # Run the current input through the model
-        output = model(input[None, :])[3]
+        _ , _ , _ , output = model(input[None, :])
 
         # Sample the next token from the probabilitys at the last position of the output.
         c = sample(output[0, -1, :], temperature)
@@ -190,6 +190,9 @@ def go(
         attention_type=attention_type,
         sep_layers=sep_layers,
     )
+
+    print("Depth of Transformer Blocks:", len(model.tblocks))
+
     if torch.cuda.is_available():
         model.cuda()
 
@@ -207,18 +210,7 @@ def go(
     instances_seen = 0
     scaler = GradScaler()
 
-    # dropout_schedule = {
-    # 80000: 0.1,
-    # }
-
-    # Initialize EMA losses very high
-    ema_losses = [float('inf')] * 4
-
     for i in tqdm.trange(num_batches):    
-        # if i in dropout_schedule:
-        #     new_dropout_rate = dropout_schedule[i]
-        #     for block in model.tblocks:
-        #         block.update_dropout(new_dropout_rate)
                 
         opt.zero_grad()
         source, target = sample_batch(data_train, length=context, batch_size=batch_size)
@@ -229,34 +221,22 @@ def go(
 
         # Wrap the forward pass in an autocast context
         with autocast():
-            # Ensure model returns final output and intermediate outputs as a list
-            outputs = model(source)
+            y1, y2, y3, y4 = model(source)
 
-            # # Calculate the distillation loss weight which linearly increases over the first 50k batches
-            # distill_loss_weight = min(gamma, i / 50000)
-
-            # Compute the combined loss with the scaling factor applied to the distillation loss
-            # Note: y_outputs is already a list of intermediate outputs
             loss, teacher_loss, student_losses = util.distill_loss(
-                outputs[3], target, outputs[0:3], gamma
+                y4, target, [y1, y2, y3], gamma
             )
 
-            losses, ema_losses = compute_ema_losses(outputs, target, ema_losses)
-
-        # Add individual loss and EMA logs
-        for idx, loss in enumerate(losses):
-            wandb.log({f"transformer/train-loss-layer-{idx+1}": float(loss.item()) * util.LOG2E})
-
+        # Preparing values for logging to avoid touching the original tensors
+        log_data = {}
+        log_data["transformer/train-loss-teacher"] = float(teacher_loss.item()) * util.LOG2E
+        for idx, loss_value in enumerate(student_losses):
+            log_data[f"transformer/train-loss-distil-{idx+1}"] = float(loss_value.item()) * util.LOG2E
 
         # Scale the loss and perform backward pass
         scaler.scale(loss).backward()
 
-            # Print gradient norms here
-        print(f"Batch {i+1}/{num_batches} Gradient Norms:")
-        for name, param in model.named_parameters():
-            if param.requires_grad and param.grad is not None:
-                print(f"{name}: {param.grad.norm().item()}")
-
+        wandb.log(log_data, step=instances_seen)
 
         # Unscale the gradients before clipping
         scaler.unscale_(opt)

@@ -402,14 +402,14 @@ def go(num_batches=1_000_000, batch_size=32, seed=1, data=None,
             wandb.log({'target_loss': float(target_loss.item()) * util.LOG2E})
             wandb.log({'total_loss': float(total_loss.item()) * util.LOG2E})
 
-        # tbw.add_scalar('distill/train-loss', float(loss.item()) * LOG2E, instances_seen)
-        # tbw.add_scalar('distill/time-forward', t, instances_seen)
-        # tbw.add_scalar('distill/ts', 0, instances_seen)
-
         if gamma is not None:
             scaler.scale(total_loss).backward()
         else:
             scaler.scale(loss).backward()
+
+        for name, param in model.named_parameters():
+            if param.requires_grad and param.grad is not None:
+                print(f"{name}: {param.grad.norm().item()}")
 
         # Unscale the gradients before clipping
         scaler.unscale_(opt)

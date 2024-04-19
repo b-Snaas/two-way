@@ -462,8 +462,8 @@ def estimate_compression(
 def distill_loss(output, target, y_outputs, gamma):
     """
     Compute the primary loss with mandatory distillation loss and target loss for multiple layers.
-    Student losses are computed as the average of distillation loss (comparison with the teacher output)
-    and direct loss (comparison with the ground truth).
+    Distillation loss is computed based on the similarity of each intermediate output to the final
+    model output (as teacher output) and direct loss based on the true labels.
 
     Parameters:
     - output: The model's final output logits.
@@ -482,8 +482,12 @@ def distill_loss(output, target, y_outputs, gamma):
     out = output.transpose(2, 1).detach()
     outp = F.softmax(out, dim=1)
 
-    # Compute distillation losses for each y_output
-    distill_losses = []
+    # Initialize student loss
+    student_loss = 0
+
+    student_losses = []
+
+    # Compute distillation and ground truth losses for each y_output
     for y in y_outputs:
         # Compute distillation loss for the current intermediate output
         distill_loss = F.cross_entropy(y.transpose(2, 1), outp, reduction="mean")
@@ -491,17 +495,16 @@ def distill_loss(output, target, y_outputs, gamma):
         # Compute direct ground truth loss for the current intermediate output
         ground_truth_loss = F.cross_entropy(y.transpose(2, 1), target, reduction="mean")
 
-        # Average the distillation and ground truth losses
-        combined_loss = 0.5 * distill_loss + 0.5 * ground_truth_loss
-        distill_losses.append(combined_loss)
+        # Add distillation and ground truth losses to the student loss
+        student_loss += (distill_loss * 0.5) + (ground_truth_loss * 0.5)
 
-    # Combine distillation losses
-    student_loss = sum(distill_losses)
+        student_losses.append(ground_truth_loss)
 
-    # Combine teacher and student loss for the backward pass
-    loss = teacher_loss + (gamma * student_loss)
+    # Scale the combined student losses with gamma and add to teacher loss
+    loss = teacher_loss + gamma * student_loss
 
-    return loss, teacher_loss, distill_losses
+    return loss, teacher_loss, student_losses
+
 
 
 def ema_update(old, new, beta=0.50):
