@@ -223,16 +223,14 @@ def go(
             output = model(source)  # forward pass
             loss = F.nll_loss(output.transpose(2, 1), target, reduction="mean")
 
-        # Log the loss
-        wandb.log(
-            {
-                "transformer/train-loss": float(loss.item()) * util.LOG2E,
-            },
-            step=instances_seen,
-        )
+        log_data = {}
+
+        log_data["transformer/train-loss-teacher"] = float(loss.item()) * util.LOG2E
 
         # Scale the loss and perform backward pass
         scaler.scale(loss).backward()
+
+        wandb.log(log_data, step=instances_seen)
 
         # Unscale the gradients before clipping
         scaler.unscale_(opt)
