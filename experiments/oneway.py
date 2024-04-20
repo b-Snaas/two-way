@@ -191,8 +191,6 @@ def go(
         sep_layers=sep_layers,
     )
 
-    print("Depth of Transformer Blocks:", len(model.tblocks))
-
     if torch.cuda.is_available():
         model.cuda()
 

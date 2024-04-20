@@ -127,9 +127,6 @@ class DistGen(nn.Module):
         fourth_depth = len(self.tblocks) // 4
         dist_points = [fourth_depth - 1, 2 * fourth_depth - 1, 3 * fourth_depth - 1]
 
-        #Print the distpoints
-        print("Distillation Points: ", dist_points)
-
         # Initialize outputs for the distillation points
         dist_output_1st = None
         dist_output_2nd = None
@@ -146,9 +143,6 @@ class DistGen(nn.Module):
             elif i == dist_points[2]:
                 dist_output_3rd = x
 
-        #Print if the distillation points are captured by saying true if they are not None
-        print("Distillation Points Captured: ", dist_output_1st is not None, dist_output_2nd is not None, dist_output_3rd is not None)
-
         if self.sep_layers == True:
             # Apply the top layer to the distillation outputs if needed
             y_1st = None if dist_output_1st is None else self.dist1(dist_output_1st)
@@ -159,9 +153,6 @@ class DistGen(nn.Module):
             y_1st = None if dist_output_1st is None else self.toprobs(dist_output_1st)
             y_2nd = None if dist_output_2nd is None else self.toprobs(dist_output_2nd)
             y_3rd = None if dist_output_3rd is None else self.toprobs(dist_output_3rd)
-
-        # Print the outputs of the distillation points if they are not None
-        print("Distillation Outputs: ", y_1st is not None, y_2nd is not None, y_3rd is not None)
 
         x = self.toprobs(x)
 
