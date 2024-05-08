@@ -199,23 +199,22 @@ def go(
 
     # Training loop
     instances_seen = 0
+    batches_seen = 0
     scaler = GradScaler()
 
-    # Assume max_depth is divisible by 4 for simplicity
     quarter_depth = depth // 4
 
     batch_size_by_depth = {
         quarter_depth: 500,
         2 * quarter_depth: 265,
         3 * quarter_depth: 190,
-        depth: 150
+        depth: 140
     }
 
-    for i in tqdm.trange(num_batches): 
+    for i in tqdm.trange(num_batches):
+        batches_seen += 1
         current_depth = random.choice([quarter_depth, 2 * quarter_depth, 3 * quarter_depth, depth])
         batch_size = batch_size_by_depth[current_depth]
-
-        print(f"Current depth: {current_depth}, Current batch size: {batch_size}")
 
         opt.zero_grad()
         source, target = sample_batch(data_train, length=context, batch_size=batch_size)
@@ -229,14 +228,9 @@ def go(
             output = model(source, current_depth=current_depth)
             loss = F.nll_loss(output.transpose(2, 1), target, reduction="mean")
 
-        log_data = {}
-
-        log_data["transformer/train-loss-teacher"] = float(loss.item()) * util.LOG2E
 
         # Scale the loss and perform backward pass
         scaler.scale(loss).backward()
-
-        wandb.log(log_data, step=instances_seen)
 
         # Unscale the gradients before clipping
         scaler.unscale_(opt)
@@ -251,12 +245,22 @@ def go(
 
         # Update the learning rate
         sch.step()
+        
+        log_data = {}
 
-        # Log the learning rate
-        wandb.log(
-            {"transformer/learning-rate": sch.get_last_lr()[0]},
-            step=instances_seen,
-        )
+        # Prepare logging data
+        log_data = {
+            "train-loss-teacher": float(loss.item()) * util.LOG2E,
+            "learning-rate": sch.get_last_lr()[0],
+        }
+
+        # Log metrics with instances_seen as the step
+        wandb.log({**log_data, "step_type": "instances"}, step=instances_seen)
+
+        # Log metrics with batches_seen as the step
+        wandb.log({**log_data, "step_type": "batches"}, step=batches_seen)
+
+        wandb.log(log_data, step=instances_seen)
 
         # Validate every `test_every` steps. First we compute the
         # compression on the validation data (or a subset),
