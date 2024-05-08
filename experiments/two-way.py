@@ -123,7 +123,6 @@ def sample_sequence(
 
 def go(
     num_batches=1_000_000,
-    batch_size=32,
     data=None,
     lr_min=1e-4,
     lr_max=3e-4,
@@ -156,7 +155,6 @@ def go(
         config={
             "min_learning_rate": lr_min,
             "max_learning_rate": lr_max,
-            "batch_size": batch_size,
             "embedding_size": embedding_size,
             "num_heads": num_heads,
             "context": context,
