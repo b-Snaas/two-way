@@ -246,22 +246,16 @@ def go(
         # Update the learning rate
         sch.step()
         
-        # Prepare logging data with unique names for instances and batches
-        instance_log_data = {
-            "instance/train-loss-teacher": float(loss.item()) * util.LOG2E,
-            "instance/learning-rate": sch.get_last_lr()[0],
+        # Log data
+        log_data = {
+            "train-loss-teacher": float(loss.item()) * util.LOG2E,
+            "learning-rate": sch.get_last_lr()[0],
+            "instances_seen": instances_seen,
+            "batches_seen": batches_seen,
         }
 
-        batch_log_data = {
-            "batch/train-loss-teacher": float(loss.item()) * util.LOG2E,
-            "batch/learning-rate": sch.get_last_lr()[0],
-        }
-
-        # Log metrics with instances_seen as the step
-        wandb.log(instance_log_data, step=instances_seen)
-
-        # Log metrics with batches_seen as the step
-        wandb.log(batch_log_data, step=batches_seen)
+        # Log the data
+        wandb.log(log_data)
 
         # Validate every `test_every` steps. First we compute the
         # compression on the validation data (or a subset),
