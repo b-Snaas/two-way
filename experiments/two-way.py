@@ -207,10 +207,10 @@ def go(
     quarter_depth = depth // 4
 
     batch_size_by_depth = {
-        quarter_depth: 64,
-        2 * quarter_depth: 32,
-        3 * quarter_depth: 16,
-        depth: 8
+        quarter_depth: 530,
+        2 * quarter_depth: 295,
+        3 * quarter_depth: 200,
+        depth: 150
     }
 
     for i in tqdm.trange(num_batches): 

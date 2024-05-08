@@ -27,7 +27,6 @@ def load_data_and_model(depth, embedding_size, num_heads, context, num_tokens, a
     )
     model.to(device)
     dummy_input = torch.randint(0, num_tokens, (1, context), device=device)
-    # Updated dummy loss function that adjusts target tensor size based on model output
     dummy_loss = lambda output: F.nll_loss(
         output.transpose(2, 1), 
         torch.randint(0, num_tokens, (output.size(0), context), device=device)
@@ -46,7 +45,8 @@ def main():
     for depth in depths:
         print(f"Evaluating optimal batch size for model depth: {depth}")
         model, dummy_input, dummy_loss = load_data_and_model(depth, embedding_size, num_heads, context, num_tokens, attention_type)
-        optimal_batch_size = find_batch_size(model, dummy_loss, dummy_input)
+        optimal_batch_size = find_batch_size(model, dummy_loss, dummy_input, burn_in=3, samples=20,
+                                                                             wandb=None, use_amp=True)
         batch_sizes[depth] = optimal_batch_size
         print(f"Optimal batch size for depth {depth}: {optimal_batch_size}")
 
