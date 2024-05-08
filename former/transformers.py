@@ -72,24 +72,36 @@ class TwowayGen(nn.Module):
     """
 
     def __init__(
-        self, emb, heads, depth, seq_length, num_tokens, attention_type="default"
+        self,
+        emb,
+        heads,
+        depth,
+        seq_length,
+        num_tokens,
+        attention_type="default",
+        distpoint=None,
+        sep_layers=False,
     ):
-
         super().__init__()
 
         self.num_tokens = num_tokens
+
         self.token_embedding = nn.Embedding(
             embedding_dim=emb, num_embeddings=num_tokens
         )
-        self.pos_embedding = nn.Embedding(
-            embedding_dim=emb,
-            num_embeddings=(
-                seq_length * 2 - 1 if attention_type == "relative" else seq_length
-            ),
-        )
+        self.pos_embedding = nn.Embedding(embedding_dim=emb, num_embeddings=seq_length)
+
+        self.sep_layers = sep_layers
+
+        self.toprobs = nn.Linear(emb, num_tokens)
+        self.dist1 = nn.Linear(emb, num_tokens)
+        self.dist2 = nn.Linear(emb, num_tokens)
+        self.dist3 = nn.Linear(emb, num_tokens)
+
+        self.distpoint = distpoint
 
         tblocks = []
-        for i in range(depth):
+        for _ in range(depth):
             tblocks.append(
                 TransformerBlock(
                     emb=emb,
@@ -97,33 +109,55 @@ class TwowayGen(nn.Module):
                     seq_length=seq_length,
                     mask=True,
                     attention_type=attention_type,
-                    pos_embedding=self.pos_embedding,
                 )
             )
 
-        self.tblocks = nn.Sequential(*tblocks)
-
-        self.toprobs = nn.Linear(emb, num_tokens)
+        self.tblocks = nn.ModuleList(modules=tblocks)
 
     def forward(self, x, current_depth):
-        """
-        :param x: A (batch, sequence length) integer tensor of token indices.
-        :return: predicted log-probability vectors for each token based on the preceding tokens.
-        """
         tokens = self.token_embedding(x)
         b, t, e = tokens.size()
 
-        positions = self.pos_embedding(torch.arange(t, device=d()))[None, :, :].expand(
-            b, t, e
-        )
+        positions = self.pos_embedding(torch.arange(t, device=x.device))[
+            None, :, :
+        ].expand(b, t, e)
         x = tokens + positions
 
-        for i in range(current_depth):
-            x = self.tblocks[i](x)
+        # Calculate the indices for the distillation points
+        fourth_depth = len(self.tblocks) // 4
+        dist_points = [fourth_depth - 1, 2 * fourth_depth - 1, 3 * fourth_depth - 1]
 
-        x = self.toprobs(x.view(b * t, e)).view(b, t, self.num_tokens)
+        # Initialize outputs for the distillation points
+        dist_output_1st = None
+        dist_output_2nd = None
+        dist_output_3rd = None
 
-        return F.log_softmax(x, dim=2)
+        for i, block in enumerate(self.tblocks[:current_depth]):
+            x = block(x)
+
+            # Capture the outputs at the distillation points
+            if i == dist_points[0]:
+                dist_output_1st = x
+            elif i == dist_points[1]:
+                dist_output_2nd = x
+            elif i == dist_points[2]:
+                dist_output_3rd = x
+
+        if self.sep_layers == True:
+            # Apply the top layer to the distillation outputs if needed
+            y_1st = None if dist_output_1st is None else self.dist1(dist_output_1st)
+            y_2nd = None if dist_output_2nd is None else self.dist2(dist_output_2nd)
+            y_3rd = None if dist_output_3rd is None else self.dist3(dist_output_3rd)
+        else:
+            # Apply the top layer to the distillation outputs if needed
+            y_1st = None if dist_output_1st is None else self.toprobs(dist_output_1st)
+            y_2nd = None if dist_output_2nd is None else self.toprobs(dist_output_2nd)
+            y_3rd = None if dist_output_3rd is None else self.toprobs(dist_output_3rd)
+
+        x = self.toprobs(x)
+
+        return y_1st, y_2nd, y_3rd, x
+
 
 
 class DistGen(nn.Module):

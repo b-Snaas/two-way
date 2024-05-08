@@ -120,6 +120,16 @@ def sample_sequence(
     print()
     return seed
 
+class ExponentialMovingAverage:
+    def __init__(self, decay=0.99):
+        self.decay = decay
+        self.value = None
+
+    def update(self, new_value):
+        if self.value is None:
+            self.value = new_value
+        else:
+            self.value = self.decay * self.value + (1 - self.decay) * new_value
 
 def go(
     num_batches=1_000_000,
@@ -211,6 +221,11 @@ def go(
         depth: 140
     }
 
+    ema1 = ExponentialMovingAverage(decay=0.50)
+    ema2 = ExponentialMovingAverage(decay=0.50)
+    ema3 = ExponentialMovingAverage(decay=0.50)
+    ema_final = ExponentialMovingAverage(decay=0.50)
+
     for i in tqdm.trange(num_batches):
         batches_seen += 1
         current_depth = random.choice([quarter_depth, 2 * quarter_depth, 3 * quarter_depth, depth])
@@ -225,12 +240,16 @@ def go(
 
         # Wrap the forward pass in an autocast context
         with autocast():
-            output = model(source, current_depth=current_depth)
-            loss = F.nll_loss(output.transpose(2, 1), target, reduction="mean")
-
+            dist_output_1st, dist_output_2nd, dist_output_3rd, output_final = model(source, current_depth=current_depth)
+            
+            # Compute loss for each output
+            loss1 = F.cross_entropy(dist_output_1st.transpose(2, 1), target, reduction="mean") if dist_output_1st is not None else None
+            loss2 = F.cross_entropy(dist_output_2nd.transpose(2, 1), target, reduction="mean") if dist_output_2nd is not None else None
+            loss3 = F.cross_entropy(dist_output_3rd.transpose(2, 1), target, reduction="mean") if dist_output_3rd is not None else None
+            loss_final = F.cross_entropy(output_final.transpose(2, 1), target, reduction="mean")
 
         # Scale the loss and perform backward pass
-        scaler.scale(loss).backward()
+        scaler.scale(loss_final).backward()
 
         # Unscale the gradients before clipping
         scaler.unscale_(opt)
@@ -245,17 +264,28 @@ def go(
 
         # Update the learning rate
         sch.step()
+
+        # Update EMAs
+        if loss1:
+            ema1.update(loss1.item())
+        if loss2:
+            ema2.update(loss2.item())
+        if loss3:
+            ema3.update(loss3.item())
+        ema_final.update(loss_final.item())
         
-        # Log data
         log_data = {
-            "train-loss-teacher": float(loss.item()) * util.LOG2E,
+            "train-loss-final": float(loss_final.item()) * util.LOG2E,
+            "train-loss-1st": float(loss1) * util.LOG2E if dist_output_1st is not None else None,
+            "train-loss-2nd": float(loss2) * util.LOG2E if dist_output_2nd is not None else None,
+            "train-loss-3rd": float(loss3) * util.LOG2E if dist_output_3rd is not None else None,
             "learning-rate": sch.get_last_lr()[0],
-            "instances_seen": instances_seen,
             "batches_seen": batches_seen,
         }
 
         # Log the data
-        wandb.log(log_data)
+        wandb.log(log_data, step=instances_seen)
+
 
         # Validate every `test_every` steps. First we compute the
         # compression on the validation data (or a subset),
