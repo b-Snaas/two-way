@@ -26,9 +26,12 @@ def load_data_and_model(depth, embedding_size, num_heads, context, num_tokens, a
         attention_type=attention_type,
     )
     model.to(device)
-    dummy_input = torch.randint(0, num_tokens, (1, context)).to(device)
-    # Define the dummy loss function, which uses the model's output
-    dummy_loss = lambda output: F.nll_loss(output.transpose(2, 1), torch.randint(0, num_tokens, (1, context)).to(device))
+    dummy_input = torch.randint(0, num_tokens, (1, context), device=device)
+    # Updated dummy loss function that adjusts target tensor size based on model output
+    dummy_loss = lambda output: F.nll_loss(
+        output.transpose(2, 1), 
+        torch.randint(0, num_tokens, (output.size(0), context), device=device)
+    )
     return model, dummy_input, dummy_loss
 
 def main():
