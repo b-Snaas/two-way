@@ -205,9 +205,9 @@ def go(
     quarter_depth = depth // 4
 
     batch_size_by_depth = {
-        quarter_depth: 500,
-        2 * quarter_depth: 265,
-        3 * quarter_depth: 190,
+        quarter_depth: 490,
+        2 * quarter_depth: 255,
+        3 * quarter_depth: 185,
         depth: 140
     }
 
@@ -246,21 +246,22 @@ def go(
         # Update the learning rate
         sch.step()
         
-        log_data = {}
+        # Prepare logging data with unique names for instances and batches
+        instance_log_data = {
+            "instance/train-loss-teacher": float(loss.item()) * util.LOG2E,
+            "instance/learning-rate": sch.get_last_lr()[0],
+        }
 
-        # Prepare logging data
-        log_data = {
-            "train-loss-teacher": float(loss.item()) * util.LOG2E,
-            "learning-rate": sch.get_last_lr()[0],
+        batch_log_data = {
+            "batch/train-loss-teacher": float(loss.item()) * util.LOG2E,
+            "batch/learning-rate": sch.get_last_lr()[0],
         }
 
         # Log metrics with instances_seen as the step
-        wandb.log({**log_data, "step_type": "instances"}, step=instances_seen)
+        wandb.log(instance_log_data, step=instances_seen)
 
         # Log metrics with batches_seen as the step
-        wandb.log({**log_data, "step_type": "batches"}, step=batches_seen)
-
-        wandb.log(log_data, step=instances_seen)
+        wandb.log(batch_log_data, step=batches_seen)
 
         # Validate every `test_every` steps. First we compute the
         # compression on the validation data (or a subset),
