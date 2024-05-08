@@ -215,6 +215,8 @@ def go(
         current_depth = random.choice([quarter_depth, 2 * quarter_depth, 3 * quarter_depth, depth])
         batch_size = batch_size_by_depth[current_depth]
 
+        print(f"Current depth: {current_depth}, Current batch size: {batch_size}")
+
         opt.zero_grad()
         source, target = sample_batch(data_train, length=context, batch_size=batch_size)
         instances_seen += source.size(0)
