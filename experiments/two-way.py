@@ -205,10 +205,10 @@ def go(
     quarter_depth = depth // 4
 
     batch_size_by_depth = {
-        quarter_depth: 530,
-        2 * quarter_depth: 295,
-        3 * quarter_depth: 200,
-        depth: 150
+        quarter_depth: 520,
+        2 * quarter_depth: 285,
+        3 * quarter_depth: 190,
+        depth: 140
     }
 
     for i in tqdm.trange(num_batches): 
@@ -296,45 +296,6 @@ def go(
                 )
 
                 # -- 0.9 bit per byte is around the state of the art.
-
-def find_batch_size(model, loss, input, opt=None, upper=2000, samples=10, burn_in=10, wandb=None, use_amp=False):
-    """
-    Runs a fibonacci search over batch sizes to find the one with the highest throughput
-
-    :param model:
-    :param input: Either a single batch or an iterable of batches of the shape and datatype the model expects. The batch
-    dimension should be 1.
-    :param shape:
-    :param loss: A function that takes the model output and computes a loss. This may contain a dummy target variable. If
-    the model and batch are cuda then this dummy variable should be as well.
-    :return:
-    """
-
-    if isinstance(input, torch.Tensor):
-        input = (input,)
-
-    assert all(i.size(0) == 1 for i in input), str(list(i.size() for i in input))
-
-    if opt is None:
-        opt = torch.optim.Adam(params=model.parameters(), lr=3e-4)
-
-    search = Search(
-        lambda b : throughput(b, model, loss, input, opt, samples=samples, burn_in=burn_in, use_amp=use_amp), max_x=upper)
-
-    if all(y == float('inf') for y in search.y):
-        raise Exception(f'All batch sizes led to out-of-memory errors. Batch sizes sampled: {search.x}. Throughputs: {search.y}')
-
-    if search.opt == upper:
-        warnings.warn('The best batch size found was the upper bound of the search interval. You may want to try again with a higher value for `upper`.')
-
-    if wandb is not None:
-        table = wandb.Table(data=[[x, y] for (x, y) in zip(search.x, search.y)],
-                            columns=['batch_sizes', 'throughputs'])
-        plot = wandb.plot.line(table=table, x='batch_sizes', y='throughputs', title='throughput test')
-        wandb.log({'throughput test': plot})
-        wandb.config['throughput-test-result'] = search.opt
-
-    return search.opt, search.x, search.y
 
 
 if __name__ == "__main__":
