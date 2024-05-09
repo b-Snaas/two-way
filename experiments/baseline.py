@@ -150,7 +150,7 @@ def go(
         torch.manual_seed(seed)
 
     wandb.init(
-        project="your_project_name",
+        project="distill-transformer",
         config={
             "min_learning_rate": lr_min,
             "max_learning_rate": lr_max,
@@ -234,16 +234,18 @@ def go(
         # Update the learning rate
         sch.step()
 
+        log_data = {}
+
+        log_data["output-layer-loss"] = float(loss.item()) * util.LOG2E
+
         # Log data
         log_data = {
-            "train-loss-teacher": float(loss.item()) * util.LOG2E,
             "learning-rate": sch.get_last_lr()[0],
-            "instances_seen": instances_seen,
             "batches_seen": batches_seen,
         }
 
         # Log the data
-        wandb.log(log_data)
+        wandb.log(log_data, step=instances_seen)
 
         # Validate every `test_every` steps. First we compute the
         # compression on the validation data (or a subset),

@@ -161,7 +161,7 @@ def go(
         torch.manual_seed(seed)
 
     wandb.init(
-        project="your_project_name",
+        project="distill-transformer",
         config={
             "min_learning_rate": lr_min,
             "max_learning_rate": lr_max,
