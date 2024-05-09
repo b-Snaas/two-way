@@ -262,6 +262,7 @@ def go(
             # Calculate distillation loss
             loss, _, _ = dynamic_distill_loss(teacher_output, target, student_outputs, gamma=0.5, ema_values=current_ema_values)
 
+            output_layer_loss = F.cross_entropy(teacher_output.transpose(2, 1), target, reduction="mean")
 
         # Backward pass with gradient scaling
         scaler.scale(loss).backward()
@@ -280,7 +281,11 @@ def go(
 
         # Update EMAs and log data
         ema_values = [ema1, ema2, ema3, ema4]
-        log_data = {"learning-rate": sch.get_last_lr()[0], "batches_seen": batches_seen}
+        log_data = {
+        "learning-rate": sch.get_last_lr()[0],
+        "batches_seen": batches_seen,
+        "output-layer-loss": output_layer_loss.item() * util.LOG2E
+    }
 
         # Logging each available loss
         if valid_outputs:
