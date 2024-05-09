@@ -235,14 +235,11 @@ def go(
         sch.step()
 
         log_data = {}
-
         log_data["output-layer-loss"] = float(loss.item()) * util.LOG2E
 
-        # Log data
-        log_data = {
-            "learning-rate": sch.get_last_lr()[0],
-            "batches_seen": batches_seen,
-        }
+        # Add each additional key directly
+        log_data["learning-rate"] = sch.get_last_lr()[0]
+        log_data["batches_seen"] = batches_seen
 
         # Log the data
         wandb.log(log_data, step=instances_seen)
