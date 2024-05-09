@@ -14,6 +14,7 @@ from .util import (
     sample_sequence,
     sample,
     distill_loss,
+    dynamic_distill_loss,
     enwik8_string,
     enwik8_bytes,
     compute_ema_losses

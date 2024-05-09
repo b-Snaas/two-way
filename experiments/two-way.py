@@ -1,5 +1,5 @@
 from former import util, TwowayGen
-from former.util import here
+from former.util import here, dynamic_distill_loss
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -163,7 +163,7 @@ def go(
         torch.manual_seed(seed)
 
     wandb.init(
-        project="distill-transformer",
+        project="test",
         config={
             "min_learning_rate": lr_min,
             "max_learning_rate": lr_max,
@@ -228,67 +228,68 @@ def go(
     ema3 = ExponentialMovingAverage(decay=0.50)
     ema4 = ExponentialMovingAverage(decay=0.50)
 
+    ema_values = [ema1, ema2, ema3, ema4]
+
     for i in tqdm.trange(num_batches):
         batches_seen += 1
+        # Randomly choose the current depth for this batch from predefined options
         current_depth = random.choice([quarter_depth, 2 * quarter_depth, 3 * quarter_depth, depth])
-
         batch_size = batch_size_by_depth[current_depth]
 
-        opt.zero_grad()
+        # Prepare the batch
         source, target = sample_batch(data_train, length=context, batch_size=batch_size)
         instances_seen += source.size(0)
 
+        # Move data to GPU if available
         if torch.cuda.is_available():
             source, target = source.cuda(), target.cuda()
 
-        # Wrap the forward pass in an autocast context
+        # Gradient zeroing and autocasting
+        opt.zero_grad()
         with autocast():
+            # Get all layer outputs up to the current maximum depth
             outputs = model(source, current_depth=current_depth)
-            
-            # Compute loss for each available output
-            losses = [F.cross_entropy(output.transpose(2, 1), target, reduction="mean") if output is not None else None for output in outputs]
 
-        # Find the loss corresponding to the current depth
-        final_loss_index = {
-            quarter_depth: 0,
-            2 * quarter_depth: 1,
-            3 * quarter_depth: 2,
-            depth: 3
-        }[current_depth]
-        final_loss = losses[final_loss_index]
+            # Exclude None values from outputs and prepare for distillation
+            valid_outputs = [output for output in outputs if output is not None]
 
-        # Scale the final loss and perform backward pass
-        scaler.scale(final_loss).backward()
+            # Use the last valid output as the teacher output and others as students
+            teacher_output = valid_outputs[-1]
+            student_outputs = valid_outputs[:-1]
 
-        # Unscale the gradients before clipping
+            current_ema_values = [ema.value for ema in ema_values[:len(valid_outputs)]]
+
+            # Calculate distillation loss
+            loss, _, _ = dynamic_distill_loss(teacher_output, target, student_outputs, gamma=0.5, ema_values=current_ema_values)
+
+
+        # Backward pass with gradient scaling
+        scaler.scale(loss).backward()
         scaler.unscale_(opt)
 
         # Gradient clipping
         if gradient_clipping > 0.0:
             nn.utils.clip_grad_norm_(model.parameters(), gradient_clipping)
 
-        # Scaler step and update
+        # Optimizer and scaler steps
         scaler.step(opt)
         scaler.update()
 
-        # Update the learning rate
+        # Scheduler step
         sch.step()
 
         # Update EMAs and log data
         ema_values = [ema1, ema2, ema3, ema4]
-        log_data = {}
-        for idx, loss in enumerate(losses):
-            if loss is not None:
-                ema_values[idx].update(loss.item())
-                log_data[f"train-loss-{idx+1}"] = float(loss.item()) * util.LOG2E
+        log_data = {"learning-rate": sch.get_last_lr()[0], "batches_seen": batches_seen}
 
-        log_data["output-layer-loss"] = float(final_loss.item()) * util.LOG2E
-        log_data.update({
-            "learning-rate": sch.get_last_lr()[0],
-            "batches_seen": batches_seen,
-        })
+        # Logging each available loss
+        if valid_outputs:
+            for idx, output in enumerate(valid_outputs):
+                output_loss = F.cross_entropy(output.transpose(2, 1), target, reduction="mean").item()
+                ema_values[idx].update(output_loss)
+                log_data[f"train-loss-{idx+1}"] = output_loss * util.LOG2E
 
-        # Log the data
+        # Log the data to wandb
         wandb.log(log_data, step=instances_seen)
 
 

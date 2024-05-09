@@ -506,6 +506,63 @@ def distill_loss(output, target, y_outputs, gamma):
     return loss, teacher_loss, student_losses
 
 
+def dynamic_distill_loss(output, target, y_outputs, gamma, ema_values):
+    """
+    Compute the primary loss with mandatory distillation loss and target loss for multiple layers,
+    dynamically choosing the best soft targets based on EMAs of the available outputs, when available.
+
+    Parameters:
+    - output: The deepest layer's output logits (used only if no intermediate outputs).
+    - target: The ground truth labels.
+    - y_outputs: A list of the model's intermediate output logits at specified layers.
+    - gamma: Weight factor for the distillation and target losses.
+    - ema_values: A list of EMAs corresponding to each layer's output.
+
+    Returns:
+    - The computed total loss.
+    """
+    if not y_outputs:
+        # If no intermediate outputs, just compute loss on the deepest output
+        return F.cross_entropy(output.transpose(2, 1), target, reduction="mean"), 0, []
+
+    # Filter out any uninitialized EMAs (assumed to be None) by replacing them with a high value
+    valid_ema_values = [ema if ema is not None else float('inf') for ema in ema_values[:len(y_outputs)]]
+    teacher_index = valid_ema_values.index(min(valid_ema_values))
+
+    # Use the output with the lowest EMA as the teacher, if EMAs are valid
+    teacher_output = y_outputs[teacher_index]
+
+    # Prepare the detached teacher output for computing distillation losses
+    teacher_out = teacher_output.transpose(2, 1).detach()
+    teacher_probs = F.softmax(teacher_out, dim=1)
+
+    # Compute the teacher loss
+    teacher_loss = F.cross_entropy(teacher_output.transpose(2, 1), target, reduction="mean")
+
+    # Initialize student loss
+    student_loss = 0
+    student_losses = []
+
+    # Compute distillation and ground truth losses for each y_output
+    for idx, y in enumerate(y_outputs):
+        if idx != teacher_index:
+            # Compute distillation loss for the current intermediate output
+            distill_loss = F.cross_entropy(y.transpose(2, 1), teacher_probs, reduction="mean")
+
+            # Compute direct ground truth loss for the current intermediate output
+            ground_truth_loss = F.cross_entropy(y.transpose(2, 1), target, reduction="mean")
+
+            # Add distillation and ground truth losses to the student loss
+            student_loss += (distill_loss * 0.5) + (ground_truth_loss * 0.5)
+
+            student_losses.append(ground_truth_loss)
+
+    # Scale the combined student losses with gamma and add to teacher loss
+    loss = teacher_loss + gamma * student_loss
+
+    return loss, teacher_loss, student_losses
+
+
 
 def ema_update(old, new, beta=0.50):
     """ Update the exponential moving average (EMA) with a new data point. """
