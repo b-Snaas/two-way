@@ -215,10 +215,10 @@ def go(
     quarter_depth = depth // 4
 
     batch_size_by_depth = {
-        quarter_depth: 490,
-        2 * quarter_depth: 255,
-        3 * quarter_depth: 185,
-        depth: 140
+        quarter_depth: 480,
+        2 * quarter_depth: 250,
+        3 * quarter_depth: 180,
+        depth: 135
     }
 
     ema1 = ExponentialMovingAverage(decay=0.50)
