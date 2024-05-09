@@ -7,6 +7,7 @@ import torch.distributions as dist
 from torch.cuda.amp import autocast, GradScaler
 import numpy as np
 import random, tqdm, gzip, fire, wandb
+import gc
 
 import warnings
 
@@ -131,6 +132,13 @@ class ExponentialMovingAverage:
         else:
             self.value = self.decay * self.value + (1 - self.decay) * new_value
 
+def clean_memory():
+    # Explicitly collect garbage
+    gc.collect()
+    # Clear CUDA cache
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
 def go(
     num_batches=1_000_000,
     data=None,
@@ -227,6 +235,7 @@ def go(
     ema4 = ExponentialMovingAverage(decay=0.50)
 
     for i in tqdm.trange(num_batches):
+        clean_memory()
         batches_seen += 1
         current_depth = random.choice([quarter_depth, 2 * quarter_depth, 3 * quarter_depth, depth])
 
