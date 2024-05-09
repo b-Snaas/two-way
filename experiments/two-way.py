@@ -232,9 +232,6 @@ def go(
         batches_seen += 1
         current_depth = random.choice([quarter_depth, 2 * quarter_depth, 3 * quarter_depth, depth])
 
-        # Print the current depth
-        print(f"Current depth: {current_depth}")
-
         batch_size = batch_size_by_depth[current_depth]
 
         opt.zero_grad()
