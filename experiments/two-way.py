@@ -224,7 +224,7 @@ def go(
     ema1 = ExponentialMovingAverage(decay=0.50)
     ema2 = ExponentialMovingAverage(decay=0.50)
     ema3 = ExponentialMovingAverage(decay=0.50)
-    ema_final = ExponentialMovingAverage(decay=0.50)
+    ema4 = ExponentialMovingAverage(decay=0.50)
 
     for i in tqdm.trange(num_batches):
         batches_seen += 1
@@ -240,16 +240,22 @@ def go(
 
         # Wrap the forward pass in an autocast context
         with autocast():
-            dist_output_1st, dist_output_2nd, dist_output_3rd, output_final = model(source, current_depth=current_depth)
+            outputs = model(source, current_depth=current_depth)
             
-            # Compute loss for each output
-            loss1 = F.cross_entropy(dist_output_1st.transpose(2, 1), target, reduction="mean") if dist_output_1st is not None else None
-            loss2 = F.cross_entropy(dist_output_2nd.transpose(2, 1), target, reduction="mean") if dist_output_2nd is not None else None
-            loss3 = F.cross_entropy(dist_output_3rd.transpose(2, 1), target, reduction="mean") if dist_output_3rd is not None else None
-            loss_final = F.cross_entropy(output_final.transpose(2, 1), target, reduction="mean")
+            # Compute loss for each available output
+            losses = [F.cross_entropy(output.transpose(2, 1), target, reduction="mean") if output is not None else None for output in outputs]
 
-        # Scale the loss and perform backward pass
-        scaler.scale(loss_final).backward()
+        # Find the loss corresponding to the current depth
+        final_loss_index = {
+            quarter_depth: 0,
+            2 * quarter_depth: 1,
+            3 * quarter_depth: 2,
+            depth: 3
+        }[current_depth]
+        final_loss = losses[final_loss_index]
+
+        # Scale the final loss and perform backward pass
+        scaler.scale(final_loss).backward()
 
         # Unscale the gradients before clipping
         scaler.unscale_(opt)
@@ -265,23 +271,19 @@ def go(
         # Update the learning rate
         sch.step()
 
-        # Update EMAs
-        if loss1:
-            ema1.update(loss1.item())
-        if loss2:
-            ema2.update(loss2.item())
-        if loss3:
-            ema3.update(loss3.item())
-        ema_final.update(loss_final.item())
-        
-        log_data = {
-            "train-loss-final": float(loss_final.item()) * util.LOG2E,
-            "train-loss-1st": float(loss1) * util.LOG2E if dist_output_1st is not None else None,
-            "train-loss-2nd": float(loss2) * util.LOG2E if dist_output_2nd is not None else None,
-            "train-loss-3rd": float(loss3) * util.LOG2E if dist_output_3rd is not None else None,
+        # Update EMAs and log data
+        ema_values = [ema1, ema2, ema3, ema4]
+        log_data = {}
+        for idx, loss in enumerate(losses):
+            if loss is not None:
+                ema_values[idx].update(loss.item())
+                log_data[f"train-loss-{idx+1}"] = float(loss.item()) * util.LOG2E
+
+        log_data["output-layer-loss"] = float(final_loss.item()) * util.LOG2E
+        log_data.update({
             "learning-rate": sch.get_last_lr()[0],
             "batches_seen": batches_seen,
-        }
+        })
 
         # Log the data
         wandb.log(log_data, step=instances_seen)
