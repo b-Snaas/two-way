@@ -215,9 +215,9 @@ def go(
     quarter_depth = depth // 4
 
     batch_size_by_depth = {
-        quarter_depth: 480,
-        2 * quarter_depth: 250,
-        3 * quarter_depth: 180,
+        quarter_depth: 470,
+        2 * quarter_depth: 245,
+        3 * quarter_depth: 175,
         depth: 135
     }
 
@@ -229,6 +229,10 @@ def go(
     for i in tqdm.trange(num_batches):
         batches_seen += 1
         current_depth = random.choice([quarter_depth, 2 * quarter_depth, 3 * quarter_depth, depth])
+
+        # Print the current depth
+        print(f"Current depth: {current_depth}")
+
         batch_size = batch_size_by_depth[current_depth]
 
         opt.zero_grad()
