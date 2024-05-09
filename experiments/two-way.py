@@ -132,12 +132,6 @@ class ExponentialMovingAverage:
         else:
             self.value = self.decay * self.value + (1 - self.decay) * new_value
 
-def clean_memory():
-    # Explicitly collect garbage
-    gc.collect()
-    # Clear CUDA cache
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
 
 def go(
     num_batches=1_000_000,
@@ -223,7 +217,7 @@ def go(
     quarter_depth = depth // 4
 
     batch_size_by_depth = {
-        quarter_depth: 470,
+        quarter_depth: 450,
         2 * quarter_depth: 245,
         3 * quarter_depth: 175,
         depth: 135
@@ -235,7 +229,6 @@ def go(
     ema4 = ExponentialMovingAverage(decay=0.50)
 
     for i in tqdm.trange(num_batches):
-        clean_memory()
         batches_seen += 1
         current_depth = random.choice([quarter_depth, 2 * quarter_depth, 3 * quarter_depth, depth])
 
