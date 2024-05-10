@@ -268,14 +268,16 @@ def go(
             current_ema_values = [ema.value for ema in ema_values[:len(valid_outputs)]]
 
             # Calculate distillation loss
-            loss, teacher_loss, ground_truth_losses = dynamic_distill_loss(teacher_output, target, student_outputs, gamma=0.5, ema_values=current_ema_values)
+            # loss, teacher_loss, ground_truth_losses = dynamic_distill_loss(teacher_output, target, student_outputs, gamma=0.5, ema_values=current_ema_values)
+
+            loss = F.cross_entropy(teacher_output.transpose(2, 1), target, reduction="mean")
 
             # Get memory usage after model computation
         allocated_after, reserved_after = get_memory_usage()
 
-        for idx, ema in enumerate(ema_values):
-            if idx < len(ground_truth_losses):
-                ema.update(ground_truth_losses[idx])
+        # for idx, ema in enumerate(ema_values):
+        #     if idx < len(ground_truth_losses):
+        #         ema.update(ground_truth_losses[idx])
 
         # Backward pass with gradient scaling
         scaler.scale(loss).backward()
@@ -297,11 +299,11 @@ def go(
         log_data = {
         "learning-rate": sch.get_last_lr()[0],
         "batches_seen": batches_seen,
-        "output-layer-loss": ground_truth_losses[-1].item() * util.LOG2E
+        # "output-layer-loss": ground_truth_losses[-1].item() * util.LOG2E
     }
 
-        for idx, loss in enumerate(ground_truth_losses):
-            log_data[f"train-loss-{idx}"] = loss.item() * util.LOG2E
+        # for idx, loss in enumerate(ground_truth_losses):
+        #     log_data[f"train-loss-{idx}"] = loss.item() * util.LOG2E
 
 
         # Log the data to wandb
