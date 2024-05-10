@@ -524,6 +524,8 @@ def dynamic_distill_loss(output, target, y_outputs, gamma, ema_values):
     if not y_outputs:
         # If no intermediate outputs, just compute loss on the deepest output
         return F.cross_entropy(output.transpose(2, 1), target, reduction="mean"), 0, []
+    
+    deepest_layer_loss = F.cross_entropy(output.transpose(2, 1), target, reduction="mean")
 
     # Filter out any uninitialized EMAs (assumed to be None) by replacing them with a high value
     valid_ema_values = [ema if ema is not None else float('inf') for ema in ema_values[:len(y_outputs)]]
@@ -541,7 +543,6 @@ def dynamic_distill_loss(output, target, y_outputs, gamma, ema_values):
 
     # Initialize student loss
     student_loss = 0
-    student_losses = []
 
     # Compute distillation and ground truth losses for each y_output
     for idx, y in enumerate(y_outputs):
@@ -555,12 +556,17 @@ def dynamic_distill_loss(output, target, y_outputs, gamma, ema_values):
             # Add distillation and ground truth losses to the student loss
             student_loss += (distill_loss * 0.5) + (ground_truth_loss * 0.5)
 
-            student_losses.append(ground_truth_loss)
-
     # Scale the combined student losses with gamma and add to teacher loss
     loss = teacher_loss + gamma * student_loss
 
-    return loss, teacher_loss, student_losses
+    # Prepare ground truth losses for all outputs for EMA updates
+    ground_truth_losses = [
+        F.cross_entropy(y.transpose(2, 1), target, reduction="mean") for y in y_outputs
+    ]
+
+    ground_truth_losses.append(deepest_layer_loss)
+
+    return loss, teacher_loss, ground_truth_losses
 
 
 

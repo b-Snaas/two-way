@@ -260,9 +260,11 @@ def go(
             current_ema_values = [ema.value for ema in ema_values[:len(valid_outputs)]]
 
             # Calculate distillation loss
-            loss, _, _ = dynamic_distill_loss(teacher_output, target, student_outputs, gamma=0.5, ema_values=current_ema_values)
+            loss, teacher_loss, ground_truth_losses = dynamic_distill_loss(teacher_output, target, student_outputs, gamma=0.5, ema_values=current_ema_values)
 
-            output_layer_loss = F.cross_entropy(teacher_output.transpose(2, 1), target, reduction="mean")
+        for idx, ema in enumerate(ema_values):
+            if idx < len(ground_truth_losses):
+                ema.update(ground_truth_losses[idx])
 
         # Backward pass with gradient scaling
         scaler.scale(loss).backward()
@@ -284,27 +286,11 @@ def go(
         log_data = {
         "learning-rate": sch.get_last_lr()[0],
         "batches_seen": batches_seen,
-        "output-layer-loss": output_layer_loss.item() * util.LOG2E
+        "output-layer-loss": teacher_loss.item() * util.LOG2E
     }
 
-        if valid_outputs:
-            for idx, output in enumerate(valid_outputs):
-                # Log max and min values in the output to check for extreme values
-                print(f"Iter {i}, Layer {idx}: Max output value: {output.max().item()}, Min output value: {output.min().item()}")
-
-                # Log target values to check if they are within the valid range
-                print(f"Iter {i}, Layer {idx}: Target values: {target.tolist()}")
-
-                output_loss = F.cross_entropy(output.transpose(2, 1), target, reduction="mean")
-
-                # Log the loss to see if it's becoming inf or NaN
-                print(f"Iter {i}, Layer {idx}: Loss before update: {output_loss}")
-
-                # Update EMA and log data
-                ema_values[idx].update(output_loss)
-                log_data[f"train-loss-{idx+1}"] = float(output_loss.item()) * util.LOG2E
-
-                print(f"Iter {i}, Layer {idx}: EMA updated with: {output_loss}")
+        for idx, loss in enumerate(ground_truth_losses):
+            log_data[f"train-loss-{idx}"] = loss.item() * util.LOG2E
 
 
         # Log the data to wandb
