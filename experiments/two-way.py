@@ -287,24 +287,24 @@ def go(
         "output-layer-loss": output_layer_loss.item() * util.LOG2E
     }
 
-    if valid_outputs:
-        for idx, output in enumerate(valid_outputs):
-            # Log max and min values in the output to check for extreme values
-            print(f"Iter {i}, Layer {idx}: Max output value: {output.max().item()}, Min output value: {output.min().item()}")
+        if valid_outputs:
+            for idx, output in enumerate(valid_outputs):
+                # Log max and min values in the output to check for extreme values
+                print(f"Iter {i}, Layer {idx}: Max output value: {output.max().item()}, Min output value: {output.min().item()}")
 
-            # Log target values to check if they are within the valid range
-            print(f"Iter {i}, Layer {idx}: Target values: {target.tolist()}")
+                # Log target values to check if they are within the valid range
+                print(f"Iter {i}, Layer {idx}: Target values: {target.tolist()}")
 
-            output_loss = F.cross_entropy(output.transpose(2, 1), target, reduction="mean")
+                output_loss = F.cross_entropy(output.transpose(2, 1), target, reduction="mean")
 
-            # Log the loss to see if it's becoming inf or NaN
-            print(f"Iter {i}, Layer {idx}: Loss before update: {output_loss}")
+                # Log the loss to see if it's becoming inf or NaN
+                print(f"Iter {i}, Layer {idx}: Loss before update: {output_loss}")
 
-            # Update EMA and log data
-            ema_values[idx].update(output_loss)
-            log_data[f"train-loss-{idx+1}"] = float(output_loss.item()) * util.LOG2E
+                # Update EMA and log data
+                ema_values[idx].update(output_loss)
+                log_data[f"train-loss-{idx+1}"] = float(output_loss.item()) * util.LOG2E
 
-            print(f"Iter {i}, Layer {idx}: EMA updated with: {output_loss}")
+                print(f"Iter {i}, Layer {idx}: EMA updated with: {output_loss}")
 
 
         # Log the data to wandb
