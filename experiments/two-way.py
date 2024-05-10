@@ -286,7 +286,7 @@ def go(
         log_data = {
         "learning-rate": sch.get_last_lr()[0],
         "batches_seen": batches_seen,
-        "output-layer-loss": teacher_loss.item() * util.LOG2E
+        "output-layer-loss": ground_truth_losses[-1].item() * util.LOG2E
     }
 
         for idx, loss in enumerate(ground_truth_losses):

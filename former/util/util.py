@@ -523,7 +523,8 @@ def dynamic_distill_loss(output, target, y_outputs, gamma, ema_values):
     """
     if not y_outputs:
         # If no intermediate outputs, just compute loss on the deepest output
-        return F.cross_entropy(output.transpose(2, 1), target, reduction="mean"), 0, []
+        loss = F.cross_entropy(output.transpose(2, 1), target, reduction="mean")
+        return loss, 0, [loss]
     
     deepest_layer_loss = F.cross_entropy(output.transpose(2, 1), target, reduction="mean")
 
