@@ -269,7 +269,7 @@ def go(
             current_ema_values = [ema.value for ema in ema_values[:len(valid_outputs)]]
 
             # Calculate distillation loss
-            loss, teacher_loss, ground_truth_losses = dynamic_distill_loss(teacher_output, target, student_outputs, gamma=0.5, ema_values=current_ema_values)
+            loss, teacher_loss = dynamic_distill_loss(teacher_output, target, student_outputs, gamma=0.5, ema_values=current_ema_values)
 
         # Get memory usage after model computation
         allocated_after, reserved_after = get_memory_usage()
@@ -277,9 +277,9 @@ def go(
         # Print or log the profiling results
         print(prof.key_averages().table(sort_by="cuda_time_total" if torch.cuda.is_available() else "cpu_time_total"))
 
-        for idx, ema in enumerate(ema_values):
-            if idx < len(ground_truth_losses):
-                ema.update(ground_truth_losses[idx])
+        # for idx, ema in enumerate(ema_values):
+        #     if idx < len(ground_truth_losses):
+        #         ema.update(ground_truth_losses[idx])
 
         # Backward pass with gradient scaling
         scaler.scale(loss).backward()
@@ -296,20 +296,20 @@ def go(
         # Scheduler step
         sch.step()
 
-        # Update EMAs and log data
-        ema_values = [ema1, ema2, ema3, ema4]
-        log_data = {
-        "learning-rate": sch.get_last_lr()[0],
-        "batches_seen": batches_seen,
-        "output-layer-loss": ground_truth_losses[-1].item() * util.LOG2E
-    }
+    #     # Update EMAs and log data
+    #     ema_values = [ema1, ema2, ema3, ema4]
+    #     log_data = {
+    #     "learning-rate": sch.get_last_lr()[0],
+    #     "batches_seen": batches_seen,
+    #     "output-layer-loss": ground_truth_losses[-1].item() * util.LOG2E
+    # }
 
-        for idx, loss in enumerate(ground_truth_losses):
-            log_data[f"train-loss-{idx}"] = loss.item() * util.LOG2E
+    #     for idx, loss in enumerate(ground_truth_losses):
+    #         log_data[f"train-loss-{idx}"] = loss.item() * util.LOG2E
 
 
-        # Log the data to wandb
-        wandb.log(log_data, step=instances_seen)
+        # # Log the data to wandb
+        # wandb.log(log_data, step=instances_seen)
 
         print(f"Memory Allocated Before: {allocated_before / (1024 ** 3):.2f} GB, After: {allocated_after / (1024 ** 3):.2f} GB")
         print(f"Memory Reserved Before: {reserved_before / (1024 ** 3):.2f} GB, After: {reserved_after / (1024 ** 3):.2f} GB")
