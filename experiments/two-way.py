@@ -5,6 +5,7 @@ from torch import nn
 import torch.nn.functional as F
 import torch.distributions as dist
 from torch.cuda.amp import autocast, GradScaler
+import torch.autograd.profiler as profiler
 import numpy as np
 import random, tqdm, gzip, fire, wandb
 import gc
@@ -254,7 +255,7 @@ def go(
 
         # Gradient zeroing and autocasting
         opt.zero_grad()
-        with autocast():
+        with autocast(), profiler.profile(use_cuda=torch.cuda.is_available(), profile_memory=True, record_shapes=True) as prof:
             # Get all layer outputs up to the current maximum depth
             outputs = model(source, current_depth=current_depth)
 
@@ -268,16 +269,17 @@ def go(
             current_ema_values = [ema.value for ema in ema_values[:len(valid_outputs)]]
 
             # Calculate distillation loss
-            # loss, teacher_loss, ground_truth_losses = dynamic_distill_loss(teacher_output, target, student_outputs, gamma=0.5, ema_values=current_ema_values)
+            loss, teacher_loss, ground_truth_losses = dynamic_distill_loss(teacher_output, target, student_outputs, gamma=0.5, ema_values=current_ema_values)
 
-            loss = F.cross_entropy(teacher_output.transpose(2, 1), target, reduction="mean")
-
-            # Get memory usage after model computation
+        # Get memory usage after model computation
         allocated_after, reserved_after = get_memory_usage()
 
-        # for idx, ema in enumerate(ema_values):
-        #     if idx < len(ground_truth_losses):
-        #         ema.update(ground_truth_losses[idx])
+        # Print or log the profiling results
+        print(prof.key_averages().table(sort_by="cuda_time_total" if torch.cuda.is_available() else "cpu_time_total"))
+
+        for idx, ema in enumerate(ema_values):
+            if idx < len(ground_truth_losses):
+                ema.update(ground_truth_losses[idx])
 
         # Backward pass with gradient scaling
         scaler.scale(loss).backward()
@@ -299,11 +301,11 @@ def go(
         log_data = {
         "learning-rate": sch.get_last_lr()[0],
         "batches_seen": batches_seen,
-        # "output-layer-loss": ground_truth_losses[-1].item() * util.LOG2E
+        "output-layer-loss": ground_truth_losses[-1].item() * util.LOG2E
     }
 
-        # for idx, loss in enumerate(ground_truth_losses):
-        #     log_data[f"train-loss-{idx}"] = loss.item() * util.LOG2E
+        for idx, loss in enumerate(ground_truth_losses):
+            log_data[f"train-loss-{idx}"] = loss.item() * util.LOG2E
 
 
         # Log the data to wandb
