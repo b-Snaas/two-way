@@ -132,6 +132,11 @@ class ExponentialMovingAverage:
         else:
             self.value = self.decay * self.value + (1 - self.decay) * new_value
 
+# Define a function to get memory usage
+def get_memory_usage():
+    allocated = torch.cuda.memory_allocated()
+    reserved = torch.cuda.memory_reserved()
+    return allocated, reserved
 
 def go(
     num_batches=1_000_000,
@@ -244,6 +249,9 @@ def go(
         if torch.cuda.is_available():
             source, target = source.cuda(), target.cuda()
 
+            # Get memory usage before model computation
+        allocated_before, reserved_before = get_memory_usage()
+
         # Gradient zeroing and autocasting
         opt.zero_grad()
         with autocast():
@@ -261,6 +269,9 @@ def go(
 
             # Calculate distillation loss
             loss, teacher_loss, ground_truth_losses = dynamic_distill_loss(teacher_output, target, student_outputs, gamma=0.5, ema_values=current_ema_values)
+
+            # Get memory usage after model computation
+        allocated_after, reserved_after = get_memory_usage()
 
         for idx, ema in enumerate(ema_values):
             if idx < len(ground_truth_losses):
@@ -296,6 +307,8 @@ def go(
         # Log the data to wandb
         wandb.log(log_data, step=instances_seen)
 
+        print(f"Memory Allocated Before: {allocated_before / (1024 ** 3):.2f} GB, After: {allocated_after / (1024 ** 3):.2f} GB")
+        print(f"Memory Reserved Before: {reserved_before / (1024 ** 3):.2f} GB, After: {reserved_after / (1024 ** 3):.2f} GB")
 
         # Validate every `test_every` steps. First we compute the
         # compression on the validation data (or a subset),
