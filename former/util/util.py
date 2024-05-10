@@ -522,7 +522,7 @@ def dynamic_distill_loss(output, target, y_outputs, gamma, ema_values):
     - The computed total loss.
     """
     # Detach the deepest layer output to break the computation graph
-    output = output.detach()
+    output = output
 
     if not y_outputs:
         loss = F.cross_entropy(output.transpose(2, 1), target, reduction="mean")
