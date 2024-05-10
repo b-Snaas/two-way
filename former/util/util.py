@@ -540,16 +540,15 @@ def dynamic_distill_loss(output, target, y_outputs, gamma, ema_values):
     student_loss = 0
     for idx, y in enumerate(y_outputs):
         if idx != teacher_index:
-            # y = y.detach()
             distill_loss = F.cross_entropy(y.transpose(2, 1), teacher_probs, reduction="mean")
             ground_truth_loss = F.cross_entropy(y.transpose(2, 1), target, reduction="mean")
             student_loss += (distill_loss * 0.5) + (ground_truth_loss * 0.5)
 
     loss = teacher_loss + gamma * student_loss
-    # ground_truth_losses = [F.cross_entropy(y.transpose(2, 1), target, reduction="mean") for y in y_outputs]
-    # ground_truth_losses.append(deepest_layer_loss)
+    ground_truth_losses = [F.cross_entropy(y.transpose(2, 1), target, reduction="mean") for y in y_outputs]
+    ground_truth_losses.append(deepest_layer_loss)
 
-    return loss, teacher_loss #, ground_truth_losses
+    return loss, teacher_loss, ground_truth_losses
 
 
 
