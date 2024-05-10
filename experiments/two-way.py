@@ -286,21 +286,26 @@ def go(
         "batches_seen": batches_seen,
         "output-layer-loss": output_layer_loss.item() * util.LOG2E
     }
-        if valid_outputs:
-            for idx, output in enumerate(valid_outputs):
-                # Log max and min values in the output to check for extreme values
-                print(f"Iter {i}, Layer {idx}: Max output value: {output.max().item()}, Min output value: {output.min().item()}")
 
-                output_loss = F.cross_entropy(output.transpose(2, 1), target, reduction="mean").item()
+    if valid_outputs:
+        for idx, output in enumerate(valid_outputs):
+            # Log max and min values in the output to check for extreme values
+            print(f"Iter {i}, Layer {idx}: Max output value: {output.max().item()}, Min output value: {output.min().item()}")
 
-                # Log the loss to see if it's becoming inf or NaN
-                print(f"Iter {i}, Layer {idx}: Loss before update: {output_loss}")
+            # Log target values to check if they are within the valid range
+            print(f"Iter {i}, Layer {idx}: Target values: {target.tolist()}")
 
-                # Update EMA and log data
-                ema_values[idx].update(output_loss)
-                log_data[f"train-loss-{idx+1}"] = output_loss * util.LOG2E
+            output_loss = F.cross_entropy(output.transpose(2, 1), target, reduction="mean")
 
-                print(f"Iter {i}, Layer {idx}: EMA updated with: {output_loss}")
+            # Log the loss to see if it's becoming inf or NaN
+            print(f"Iter {i}, Layer {idx}: Loss before update: {output_loss}")
+
+            # Update EMA and log data
+            ema_values[idx].update(output_loss)
+            log_data[f"train-loss-{idx+1}"] = float(output_loss.item()) * util.LOG2E
+
+            print(f"Iter {i}, Layer {idx}: EMA updated with: {output_loss}")
+
 
         # Log the data to wandb
         wandb.log(log_data, step=instances_seen)
