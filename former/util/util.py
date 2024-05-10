@@ -521,8 +521,6 @@ def dynamic_distill_loss(output, target, y_outputs, gamma, ema_values):
     Returns:
     - The computed total loss.
     """
-    # Detach the deepest layer output to break the computation graph
-    output = output
 
     if not y_outputs:
         loss = F.cross_entropy(output.transpose(2, 1), target, reduction="mean")
@@ -542,6 +540,7 @@ def dynamic_distill_loss(output, target, y_outputs, gamma, ema_values):
     student_loss = 0
     for idx, y in enumerate(y_outputs):
         if idx != teacher_index:
+            y = y.detach()
             distill_loss = F.cross_entropy(y.transpose(2, 1), teacher_probs, reduction="mean")
             ground_truth_loss = F.cross_entropy(y.transpose(2, 1), target, reduction="mean")
             student_loss += (distill_loss * 0.5) + (ground_truth_loss * 0.5)
