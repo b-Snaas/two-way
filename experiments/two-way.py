@@ -107,7 +107,7 @@ def sample_sequence(
         input = sequence[-max_context:]
 
         # Run the current input through the model
-        output = model(input[None, :])
+        output = model(input[None, :], current_depth=12)
 
         # Sample the next token from the probabilitys at the last position of the output.
         c = sample(output[0, -1, :], temperature)
@@ -230,9 +230,14 @@ def go(
     }
 
     ema1 = ExponentialMovingAverage(decay=0.50)
+    ema1.update(1000)
     ema2 = ExponentialMovingAverage(decay=0.50)
+    ema2.update(1000)
     ema3 = ExponentialMovingAverage(decay=0.50)
+    ema3.update(1000)
     ema4 = ExponentialMovingAverage(decay=0.50)
+    ema4.update(1000)
+
 
     ema_values = [ema1, ema2, ema3, ema4]
 
@@ -262,14 +267,14 @@ def go(
             # Exclude None values from outputs and prepare for distillation
             valid_outputs = [output for output in outputs if output is not None]
 
-            # Use the last valid output as the teacher output and others as students
-            teacher_output = valid_outputs[-1]
-            student_outputs = valid_outputs[:-1]
-
             current_ema_values = [ema.value for ema in ema_values[:len(valid_outputs)]]
 
-            # Calculate distillation loss
-            loss, teacher_loss, ground_truth_losses = dynamic_distill_loss(teacher_output, target, student_outputs, gamma=0.5, ema_values=current_ema_values)
+            if len(valid_outputs) > 1:
+                loss, teacher_loss, ground_truth_losses = dynamic_distill_loss(target, valid_outputs, gamma=0.5, ema_values=current_ema_values)
+            else:
+                loss = F.cross_entropy(valid_outputs[0].transpose(2, 1), target, reduction="mean")
+                teacher_loss = loss
+                ground_truth_losses = [loss]
 
         # Get memory usage after model computation
         allocated_after, reserved_after = get_memory_usage()
