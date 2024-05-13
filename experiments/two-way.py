@@ -223,10 +223,10 @@ def go(
     quarter_depth = depth // 4
 
     batch_size_by_depth = {
-        quarter_depth: 420,
-        2 * quarter_depth: 235,
-        3 * quarter_depth: 165,
-        depth: 125
+        quarter_depth: 520,
+        2 * quarter_depth: 250,
+        3 * quarter_depth: 180,
+        depth: 130
     }
 
     ema1 = ExponentialMovingAverage(decay=0.50)
@@ -316,6 +316,8 @@ def go(
         # Log the data to wandb
         wandb.log(log_data, step=instances_seen)
 
+        # Print the current depth
+        print(f"Current depth: {current_depth}")
         print(f"Memory Allocated Before: {allocated_before / (1024 ** 3):.2f} GB, After: {allocated_after / (1024 ** 3):.2f} GB")
         print(f"Memory Reserved Before: {reserved_before / (1024 ** 3):.2f} GB, After: {reserved_after / (1024 ** 3):.2f} GB")
 
