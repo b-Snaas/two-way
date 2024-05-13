@@ -107,7 +107,7 @@ def sample_sequence(
         input = sequence[-max_context:]
 
         # Run the current input through the model
-        output = model(input[None, :], current_depth=12)
+        output = model(input[None, :], current_depth=12)[-1]
 
         # Sample the next token from the probabilitys at the last position of the output.
         c = sample(output[0, -1, :], temperature)
