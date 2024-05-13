@@ -125,12 +125,12 @@ class TwowayGen(nn.Module):
 
         # Calculate the indices for the distillation points
         fourth_depth = len(self.tblocks) // 4
-        dist_points = [fourth_depth - 1, 2 * fourth_depth - 1, 3 * fourth_depth - 1, 4 * fourth_depth - 1]
+        dist_points = [fourth_depth - 1, 4 * fourth_depth - 1]
 
         # Initialize outputs for the distillation points
         dist_output_1st = None
-        dist_output_2nd = None
-        dist_output_3rd = None
+        # dist_output_2nd = None
+        # dist_output_3rd = None
         dist_output_4th = None
 
         for i, block in enumerate(self.tblocks[:current_depth]):
@@ -139,10 +139,10 @@ class TwowayGen(nn.Module):
             # Capture the outputs at the distillation points
             if i == dist_points[0]:
                 dist_output_1st = x
-            elif i == dist_points[1]:
-                dist_output_2nd = x
-            elif i == dist_points[2]:
-                dist_output_3rd = x
+            # elif i == dist_points[1]:
+            #     dist_output_2nd = x
+            # elif i == dist_points[2]:
+            #     dist_output_3rd = x
             elif i == dist_points[3]:
                 dist_output_4th = x
             
@@ -150,17 +150,17 @@ class TwowayGen(nn.Module):
         if self.sep_layers == True:
             # Apply the top layer to the distillation outputs if needed
             y_1st = None if dist_output_1st is None else self.dist1(dist_output_1st)
-            y_2nd = None if dist_output_2nd is None else self.dist2(dist_output_2nd)
-            y_3rd = None if dist_output_3rd is None else self.dist3(dist_output_3rd)
+            # y_2nd = None if dist_output_2nd is None else self.dist2(dist_output_2nd)
+            # y_3rd = None if dist_output_3rd is None else self.dist3(dist_output_3rd)
             y_4th = None if dist_output_4th is None else self.toprobs(dist_output_4th)
         else:
             # Apply the top layer to the distillation outputs if needed
             y_1st = None if dist_output_1st is None else self.toprobs(dist_output_1st)
-            y_2nd = None if dist_output_2nd is None else self.toprobs(dist_output_2nd)
-            y_3rd = None if dist_output_3rd is None else self.toprobs(dist_output_3rd)
+            # y_2nd = None if dist_output_2nd is None else self.toprobs(dist_output_2nd)
+            # y_3rd = None if dist_output_3rd is None else self.toprobs(dist_output_3rd)
             y_4th = None if dist_output_4th is None else self.toprobs(dist_output_4th)
 
-        return y_1st, y_2nd, y_3rd, y_4th
+        return y_1st, y_4th
 
 
 
