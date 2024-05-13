@@ -143,7 +143,7 @@ class TwowayGen(nn.Module):
             #     dist_output_2nd = x
             # elif i == dist_points[2]:
             #     dist_output_3rd = x
-            elif i == dist_points[3]:
+            elif i == dist_points[1]:
                 dist_output_4th = x
             
 
