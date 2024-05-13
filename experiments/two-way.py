@@ -305,8 +305,8 @@ def go(
         "output-layer-loss": ground_truth_losses[-1].item() * util.LOG2E
     }
 
-        # for idx, loss in enumerate(ground_truth_losses):
-        #     log_data[f"train-loss-{idx}"] = loss.item() * util.LOG2E
+        for idx, loss in enumerate(ground_truth_losses):
+            log_data[f"loss-{idx+1}"] = loss.item() * util.LOG2E
 
 
         # Log the data to wandb
