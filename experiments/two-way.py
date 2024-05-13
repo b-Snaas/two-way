@@ -244,11 +244,11 @@ def go(
     for i in tqdm.trange(num_batches):
         batches_seen += 1
         # Randomly choose the current depth for this batch from predefined options
-        current_depth = random.choice([quarter_depth, 2 * quarter_depth, 3 * quarter_depth, depth])
-        batch_size = batch_size_by_depth[current_depth]
+        # current_depth = random.choice([quarter_depth, 2 * quarter_depth, 3 * quarter_depth, depth])
+        # batch_size = batch_size_by_depth[current_depth]
 
         # Prepare the batch
-        source, target = sample_batch(data_train, length=context, batch_size=batch_size)
+        source, target = sample_batch(data_train, length=context, batch_size=135)
         instances_seen += source.size(0)
 
         # Move data to GPU if available
@@ -262,7 +262,7 @@ def go(
         opt.zero_grad()
         with autocast():
             # Get all layer outputs up to the current maximum depth
-            outputs = model(source, current_depth=current_depth)
+            outputs = model(source, current_depth=12)
 
             # Exclude None values from outputs and prepare for distillation
             valid_outputs = [output for output in outputs if output is not None]
@@ -270,7 +270,7 @@ def go(
             current_ema_values = [ema.value for ema in ema_values[:len(valid_outputs)]]
 
             if len(valid_outputs) > 1:
-                loss, teacher_loss, ground_truth_losses = dynamic_distill_loss(target, valid_outputs, gamma=0.5, ema_values=current_ema_values)
+                loss, teacher_loss, ground_truth_losses = dynamic_distill_loss(target, valid_outputs, gamma=0.0, ema_values=current_ema_values)
             else:
                 loss = F.cross_entropy(valid_outputs[0].transpose(2, 1), target, reduction="mean")
                 teacher_loss = loss
