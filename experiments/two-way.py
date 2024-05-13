@@ -223,28 +223,28 @@ def go(
     quarter_depth = depth // 4
 
     batch_size_by_depth = {
-        quarter_depth: 500,
-        # 2 * quarter_depth: 245,
-        # 3 * quarter_depth: 175,
-        depth: 130
+        quarter_depth: 450,
+        2 * quarter_depth: 245,
+        3 * quarter_depth: 175,
+        depth: 125
     }
 
     ema1 = ExponentialMovingAverage(decay=0.50)
     ema1.update(1000)
-    # ema2 = ExponentialMovingAverage(decay=0.50)
-    # ema2.update(1000)
-    # ema3 = ExponentialMovingAverage(decay=0.50)
-    # ema3.update(1000)
+    ema2 = ExponentialMovingAverage(decay=0.50)
+    ema2.update(1000)
+    ema3 = ExponentialMovingAverage(decay=0.50)
+    ema3.update(1000)
     ema4 = ExponentialMovingAverage(decay=0.50)
     ema4.update(1000)
 
 
-    ema_values = [ema1, ema4]
+    ema_values = [ema1, ema2, ema3, ema4]
 
     for i in tqdm.trange(num_batches):
         batches_seen += 1
         # Randomly choose the current depth for this batch from predefined options
-        current_depth = random.choice([quarter_depth, depth])
+        current_depth = random.choice([quarter_depth, 2 * quarter_depth, 3 * quarter_depth, depth])
         batch_size = batch_size_by_depth[current_depth]
 
         # Prepare the batch
@@ -255,8 +255,8 @@ def go(
         if torch.cuda.is_available():
             source, target = source.cuda(), target.cuda()
 
-        #     # Get memory usage before model computation
-        # allocated_before, reserved_before = get_memory_usage()
+            # Get memory usage before model computation
+        allocated_before, reserved_before = get_memory_usage()
 
         # Gradient zeroing and autocasting
         opt.zero_grad()
@@ -276,8 +276,8 @@ def go(
                 teacher_loss = loss
                 ground_truth_losses = [loss]
 
-        # # Get memory usage after model computation
-        # allocated_after, reserved_after = get_memory_usage()
+        # Get memory usage after model computation
+        allocated_after, reserved_after = get_memory_usage()
 
         for idx, ema in enumerate(ema_values):
             if idx < len(ground_truth_losses):
@@ -299,6 +299,7 @@ def go(
         sch.step()
 
         # Update EMAs and log data
+        ema_values = [ema1, ema2, ema3, ema4]
         log_data = {
         "learning-rate": sch.get_last_lr()[0],
         "batches_seen": batches_seen,
@@ -306,7 +307,7 @@ def go(
     }
 
         for idx, loss in enumerate(ground_truth_losses):
-            log_data[f"loss-{idx+1}"] = loss.item() * util.LOG2E
+            log_data[f"train-loss-{idx}"] = loss.item() * util.LOG2E
 
 
         # Log the data to wandb
