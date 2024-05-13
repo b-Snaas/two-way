@@ -270,7 +270,7 @@ def go(
             current_ema_values = [ema.value for ema in ema_values[:len(valid_outputs)]]
 
             if len(valid_outputs) > 1:
-                loss, teacher_loss, ground_truth_losses = dynamic_distill_loss(target, valid_outputs, gamma=0.5, ema_values=current_ema_values)
+                loss, teacher_loss, ground_truth_losses = dynamic_distill_loss(target, valid_outputs, gamma=0.0, ema_values=current_ema_values)
             else:
                 loss = F.cross_entropy(valid_outputs[0].transpose(2, 1), target, reduction="mean")
                 teacher_loss = loss
