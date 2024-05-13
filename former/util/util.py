@@ -538,10 +538,7 @@ def dynamic_distill_loss(target, y_outputs, gamma, ema_values):
     # Initialize student loss
     student_loss = 0
     losses = []
-
-    # print teacher loss
-    print(f"Teacher loss: {teacher_loss}")
-
+    
     # Compute distillation and ground truth losses for each y_output
     for idx, y in enumerate(y_outputs):
         if idx == teacher_index:
@@ -562,9 +559,6 @@ def dynamic_distill_loss(target, y_outputs, gamma, ema_values):
 
     # Scale the combined student losses with gamma and add to teacher loss
     loss = teacher_loss + gamma * student_loss
-
-    # print loss
-    print(f"Loss: {loss}")
 
     return loss, teacher_loss, losses
 
