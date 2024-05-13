@@ -226,7 +226,7 @@ def go(
         quarter_depth: 550,
         # 2 * quarter_depth: 245,
         # 3 * quarter_depth: 175,
-        depth: 135
+        depth: 130
     }
 
     ema1 = ExponentialMovingAverage(decay=0.50)
