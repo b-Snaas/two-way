@@ -223,9 +223,9 @@ def go(
     quarter_depth = depth // 4
 
     batch_size_by_depth = {
-        quarter_depth: 420,
-        2 * quarter_depth: 235,
-        3 * quarter_depth: 165,
+        quarter_depth: 450,
+        2 * quarter_depth: 245,
+        3 * quarter_depth: 175,
         depth: 125
     }
 
@@ -246,8 +246,6 @@ def go(
         # Randomly choose the current depth for this batch from predefined options
         current_depth = random.choice([quarter_depth, 2 * quarter_depth, 3 * quarter_depth, depth])
         batch_size = batch_size_by_depth[current_depth]
-
-        print(f"Current depth: {current_depth}")
 
         # Prepare the batch
         source, target = sample_batch(data_train, length=context, batch_size=batch_size)
