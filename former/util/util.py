@@ -328,7 +328,7 @@ def compute_compression(model, data, context, batch_size):
             inputs = all[:, :-1]  # input
             target = all[:, -1]  # target values
 
-            output = model(inputs)  # Call the model
+            output = model(inputs, current_depth=12)[-1]  # Call the model
 
             # Check if the output is a tuple (multiple tensors) and use the first tensor (assuming it contains the logits)
             if isinstance(output, tuple):
