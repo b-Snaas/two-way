@@ -522,11 +522,11 @@ def dynamic_distill_loss(target, y_outputs, gamma, ema_values):
     - The computed total loss.
     """
 
-    # # Find the index of the output with the lowest EMA value to use as the teacher
-    # teacher_index = ema_values.index(min(ema_values))
+    # Find the index of the output with the lowest EMA value to use as the teacher
+    teacher_index = ema_values.index(min(ema_values))
 
     # Use the output with the lowest EMA as the teacher
-    teacher_output = y_outputs[-1]
+    teacher_output = y_outputs[teacher_index]
 
     # Compute the teacher loss first
     teacher_loss = F.cross_entropy(teacher_output.transpose(2, 1), target, reduction="mean")
@@ -540,20 +540,22 @@ def dynamic_distill_loss(target, y_outputs, gamma, ema_values):
     losses = []
 
     # Compute distillation and ground truth losses for each y_output
-    for idx, y in enumerate(y_outputs[:-1]):
-        # Compute distillation loss for the current intermediate output
-        distill_loss = F.cross_entropy(y.transpose(2, 1), teacher_probs, reduction="mean")
+    for idx, y in enumerate(y_outputs):
+        if idx == teacher_index:
+            # Append the previously computed teacher ground truth loss
+            losses.append(teacher_loss)
+        else:
+            # Compute distillation loss for the current intermediate output
+            distill_loss = F.cross_entropy(y.transpose(2, 1), teacher_probs, reduction="mean")
 
-        # Compute direct ground truth loss for the current intermediate output
-        ground_truth_loss = F.cross_entropy(y.transpose(2, 1), target, reduction="mean")
+            # Compute direct ground truth loss for the current intermediate output
+            ground_truth_loss = F.cross_entropy(y.transpose(2, 1), target, reduction="mean")
 
-        # Add distillation and ground truth losses to the student loss
-        student_loss += (distill_loss * 0.5) + (ground_truth_loss * 0.5)
+            # Add distillation and ground truth losses to the student loss
+            student_loss += (distill_loss * 0.5) + (ground_truth_loss * 0.5)
 
-        # Append the computed ground truth loss
-        losses.append(ground_truth_loss)
-
-    losses.append(teacher_loss)
+            # Append the computed ground truth loss
+            losses.append(ground_truth_loss)
 
     # Scale the combined student losses with gamma and add to teacher loss
     loss = teacher_loss + gamma * student_loss
