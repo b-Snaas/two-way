@@ -223,9 +223,9 @@ def go(
     quarter_depth = depth // 4
 
     batch_size_by_depth = {
-        quarter_depth: 550,
-        2 * quarter_depth: 275,
-        3 * quarter_depth: 175,
+        quarter_depth: 420,
+        2 * quarter_depth: 235,
+        3 * quarter_depth: 165,
         depth: 125
     }
 
@@ -262,7 +262,7 @@ def go(
 
         # Gradient zeroing and autocasting
         opt.zero_grad()
-        with autocast(), profiler.profile(use_cuda=torch.cuda.is_available(), profile_memory=True, record_shapes=True) as prof:
+        with autocast():
             # Get all layer outputs up to the current maximum depth
             outputs = model(source, current_depth=current_depth)
 
@@ -280,9 +280,6 @@ def go(
 
         # Get memory usage after model computation
         allocated_after, reserved_after = get_memory_usage()
-
-        # Print or log the profiling results
-        print(prof.key_averages().table(sort_by="cuda_time_total" if torch.cuda.is_available() else "cpu_time_total"))
 
         for idx, ema in enumerate(ema_values):
             if idx < len(ground_truth_losses):
