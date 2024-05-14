@@ -254,7 +254,7 @@ def go(
             source, target = source.cuda(), target.cuda()
 
         # Get memory usage before model computation
-        # allocated_before, reserved_before = get_memory_usage()
+        allocated_before, reserved_before = get_memory_usage()
 
         # Gradient zeroing and autocasting
         opt.zero_grad()
@@ -275,7 +275,7 @@ def go(
                 ground_truth_losses = [loss]
 
         # Get memory usage after model computation
-        # allocated_after, reserved_after = get_memory_usage()
+        allocated_after, reserved_after = get_memory_usage()
 
         for idx, ema in enumerate(ema_values):
             if idx < len(ground_truth_losses):
@@ -296,8 +296,9 @@ def go(
         # Scheduler step
         sch.step()
 
-        # Select the layer with the lowest EMA value
-        best_layer_idx = np.argmin([ema.value for ema in ema_values])
+        # Ensure EMA values are moved to CPU before finding the layer with the lowest EMA
+        ema_values_cpu = [ema.value.cpu() if ema.value.is_cuda else ema.value for ema in ema_values]
+        best_layer_idx = np.argmin(ema_values_cpu)
 
         # Update EMAs and log data
         log_data = {
@@ -312,10 +313,10 @@ def go(
         # Log the data to wandb
         wandb.log(log_data, step=instances_seen)
 
-        # # Print the current depth
-        # print(f"Current depth: {current_depth}")
-        # print(f"Memory Allocated Before: {allocated_before / (1024 ** 3):.2f} GB, After: {allocated_after / (1024 ** 3):.2f} GB")
-        # print(f"Memory Reserved Before: {reserved_before / (1024 ** 3):.2f} GB, After: {reserved_after / (1024 ** 3):.2f} GB")
+        # Print the current depth
+        print(f"Current depth: {current_depth}")
+        print(f"Memory Allocated Before: {allocated_before / (1024 ** 3):.2f} GB, After: {allocated_after / (1024 ** 3):.2f} GB")
+        print(f"Memory Reserved Before: {reserved_before / (1024 ** 3):.2f} GB, After: {reserved_after / (1024 ** 3):.2f} GB")
 
         # Validate every `test_every` steps. First we compute the
         # compression on the validation data (or a subset),
@@ -344,7 +345,7 @@ def go(
 
                 upto = data_test.size(0) if i == num_batches - 1 else test_subset
                 data_sub = data_test[:upto]
-                bits_per_byte = compute_compression(
+                bits_per_byte = util.compute_compression(
                     model, data_sub, context=context, batch_size=test_batchsize, ema_values=ema_values
                 )
                 # -- Since we're not computing gradients, we can increase the batch size a little from what we used in
