@@ -300,14 +300,14 @@ def go(
         # Scheduler step
         sch.step()
 
-        # Select the layer with the lowest EMA value
-        best_layer_idx = np.argmin([ema.value for ema in ema_values])
+        # Select the lowest ground truth loss
+        best_ground_truth_loss = min(ground_truth_losses).item()
 
         # Update EMAs and log data
         log_data = {
             "learning-rate": sch.get_last_lr()[0],
             "batches_seen": batches_seen,
-            "output-layer-loss": ground_truth_losses[best_layer_idx].item() * util.LOG2E
+            "output-layer-loss": best_ground_truth_loss * util.LOG2E
         }
 
         for idx, loss in enumerate(ground_truth_losses):
@@ -361,6 +361,7 @@ def go(
                 )
 
                 # -- 0.9 bit per byte is around the state of the art.
+
 
 
 if __name__ == "__main__":
