@@ -220,32 +220,30 @@ def go(
     batches_seen = 0
     scaler = GradScaler()
 
-    quarter_depth = depth // 4
-
     batch_size_by_depth = {
-        quarter_depth: 450,
-        2 * quarter_depth: 245,
-        3 * quarter_depth: 175,
-        depth: 125
+        1: 500,
+        2: 400,
+        3: 350,
+        4: 300,
+        5: 260,
+        6: 220,
+        7: 190,
+        8: 165,
+        9: 150,
+        10: 140,
+        11: 130,
+        12: 120
     }
 
-    ema1 = ExponentialMovingAverage(decay=0.50)
-    ema1.update(1000)
-    ema2 = ExponentialMovingAverage(decay=0.50)
-    ema2.update(1000)
-    ema3 = ExponentialMovingAverage(decay=0.50)
-    ema3.update(1000)
-    ema4 = ExponentialMovingAverage(decay=0.50)
-    ema4.update(1000)
-
-
-    ema_values = [ema1, ema2, ema3, ema4]
+    ema_values = [ExponentialMovingAverage(decay=0.50) for _ in range(depth)]
+    for ema in ema_values:
+        ema.update(1000)
 
     for i in tqdm.trange(num_batches):
         batches_seen += 1
         # Randomly choose the current depth for this batch from predefined options
-        # current_depth = random.choice([quarter_depth, 2 * quarter_depth, 3 * quarter_depth, depth])
-        # batch_size = batch_size_by_depth[current_depth]
+        current_depth = random.choice([d for d in batch_size_by_depth.keys()])
+        batch_size = batch_size_by_depth[current_depth]
 
         # Prepare the batch
         source, target = sample_batch(data_train, length=context, batch_size=135)
@@ -255,14 +253,14 @@ def go(
         if torch.cuda.is_available():
             source, target = source.cuda(), target.cuda()
 
-            # Get memory usage before model computation
+        # Get memory usage before model computation
         allocated_before, reserved_before = get_memory_usage()
 
         # Gradient zeroing and autocasting
         opt.zero_grad()
         with autocast():
             # Get all layer outputs up to the current maximum depth
-            outputs = model(source, current_depth=12)
+            outputs = model(source, current_depth=current_depth)
 
             # Exclude None values from outputs and prepare for distillation
             valid_outputs = [output for output in outputs if output is not None]
@@ -270,7 +268,7 @@ def go(
             current_ema_values = [ema.value for ema in ema_values[:len(valid_outputs)]]
 
             if len(valid_outputs) > 1:
-                loss, teacher_loss, ground_truth_losses = dynamic_distill_loss(target, valid_outputs, gamma=0.0, ema_values=current_ema_values)
+                loss, teacher_loss, ground_truth_losses = dynamic_distill_loss(target, valid_outputs, gamma=0.5, ema_values=current_ema_values)
             else:
                 loss = F.cross_entropy(valid_outputs[0].transpose(2, 1), target, reduction="mean")
                 teacher_loss = loss
@@ -299,16 +297,14 @@ def go(
         sch.step()
 
         # Update EMAs and log data
-        ema_values = [ema1, ema2, ema3, ema4]
         log_data = {
-        "learning-rate": sch.get_last_lr()[0],
-        "batches_seen": batches_seen,
-        "output-layer-loss": ground_truth_losses[-1].item() * util.LOG2E
-    }
+            "learning-rate": sch.get_last_lr()[0],
+            "batches_seen": batches_seen,
+            "output-layer-loss": ground_truth_losses[-1].item() * util.LOG2E
+        }
 
         for idx, loss in enumerate(ground_truth_losses):
             log_data[f"train-loss-{idx}"] = loss.item() * util.LOG2E
-
 
         # Log the data to wandb
         wandb.log(log_data, step=instances_seen)
