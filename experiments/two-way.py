@@ -232,7 +232,7 @@ def go(
         9: 150,
         10: 140,
         11: 130,
-        12: 120
+        12: 125
     }
 
     ema_values = [ExponentialMovingAverage(decay=0.50) for _ in range(depth)]
@@ -309,10 +309,10 @@ def go(
         # Log the data to wandb
         wandb.log(log_data, step=instances_seen)
 
-        # # Print the current depth
-        # print(f"Current depth: {current_depth}")
-        # print(f"Memory Allocated Before: {allocated_before / (1024 ** 3):.2f} GB, After: {allocated_after / (1024 ** 3):.2f} GB")
-        # print(f"Memory Reserved Before: {reserved_before / (1024 ** 3):.2f} GB, After: {reserved_after / (1024 ** 3):.2f} GB")
+        # Print the current depth
+        print(f"Current depth: {current_depth}")
+        print(f"Memory Allocated Before: {allocated_before / (1024 ** 3):.2f} GB, After: {allocated_after / (1024 ** 3):.2f} GB")
+        print(f"Memory Reserved Before: {reserved_before / (1024 ** 3):.2f} GB, After: {reserved_after / (1024 ** 3):.2f} GB")
 
         # Validate every `test_every` steps. First we compute the
         # compression on the validation data (or a subset),
