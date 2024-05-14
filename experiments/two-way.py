@@ -128,10 +128,14 @@ class ExponentialMovingAverage:
         self.value = None
 
     def update(self, new_value):
+        # Ensure the new value is detached and moved to CPU
+        new_value = new_value.detach().cpu().item() if torch.is_tensor(new_value) else new_value
+
         if self.value is None:
             self.value = new_value
         else:
             self.value = self.decay * self.value + (1 - self.decay) * new_value
+
 
 # Define a function to get memory usage
 def get_memory_usage():
@@ -253,7 +257,7 @@ def go(
         if torch.cuda.is_available():
             source, target = source.cuda(), target.cuda()
 
-        # # Get memory usage before model computation
+        # Get memory usage before model computation
         # allocated_before, reserved_before = get_memory_usage()
 
         # Gradient zeroing and autocasting
@@ -274,7 +278,7 @@ def go(
                 teacher_loss = loss
                 ground_truth_losses = [loss]
 
-        # # Get memory usage after model computation
+        # Get memory usage after model computation
         # allocated_after, reserved_after = get_memory_usage()
 
         for idx, ema in enumerate(ema_values):
@@ -296,9 +300,8 @@ def go(
         # Scheduler step
         sch.step()
 
-        # Ensure EMA values are moved to CPU before finding the layer with the lowest EMA
-        ema_values_cpu = [ema.value.cpu() if torch.is_tensor(ema.value) else ema.value for ema in ema_values]
-        best_layer_idx = np.argmin(ema_values_cpu)
+        # Select the layer with the lowest EMA value
+        best_layer_idx = np.argmin([ema.value for ema in ema_values])
 
         # Update EMAs and log data
         log_data = {
