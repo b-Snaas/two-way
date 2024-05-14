@@ -164,6 +164,7 @@ def go(
     gradient_clipping=1.0,
     sample_length=200,
     attention_type="default",
+    sep_layers=False
 ):
 
     if seed < 0:
@@ -204,6 +205,7 @@ def go(
         seq_length=context,
         num_tokens=NUM_TOKENS,
         attention_type=attention_type,
+        sep_layers=False
     )
     if torch.cuda.is_available():
         model.cuda()
