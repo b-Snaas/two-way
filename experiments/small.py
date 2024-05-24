@@ -1,16 +1,12 @@
-from former import util, TwowayGen
-from former.util import here, dynamic_distill_loss
+from former import util, GTransformer
+from former.util import here
 import torch
 from torch import nn
 import torch.nn.functional as F
 import torch.distributions as dist
 from torch.cuda.amp import autocast, GradScaler
-import torch.autograd.profiler as profiler
 import numpy as np
 import random, tqdm, gzip, fire, wandb
-import gc
-
-import warnings
 
 # NB, the enwik8 data contains tokens from 9 to 240, but well round up to the nearest
 # power of two.
@@ -107,7 +103,7 @@ def sample_sequence(
         input = sequence[-max_context:]
 
         # Run the current input through the model
-        output = model(input[None, :], current_depth=12)[-1]
+        output = model(input[None, :])
 
         # Sample the next token from the probabilitys at the last position of the output.
         c = sample(output[0, -1, :], temperature)
@@ -122,34 +118,27 @@ def sample_sequence(
     print()
     return seed
 
-class ExponentialMovingAverage:
-    def __init__(self, decay=0.99):
-        self.decay = decay
-        self.value = None
-
-    def update(self, new_value):
-        # Ensure the new value is detached and moved to CPU
-        new_value = new_value.detach().cpu().item() if torch.is_tensor(new_value) else new_value
-
-        if self.value is None:
-            self.value = new_value
-        else:
-            self.value = self.decay * self.value + (1 - self.decay) * new_value
-
-
 # Define a function to get memory usage
 def get_memory_usage():
     allocated = torch.cuda.memory_allocated()
     reserved = torch.cuda.memory_reserved()
     return allocated, reserved
 
+
+import torch
+import random
+import wandb
+import tqdm
+from torch.cuda.amp import autocast, GradScaler
+import torch.nn as nn
+import torch.nn.functional as F
+
 def go(
     num_batches=1_000_000,
+    batch_size=32,
     data=None,
-    lr_min=1e-4,
-    lr_max=3e-4,
-    peak=0.2,
-    anneal= "cos",
+    lr=3e-4,
+    warmup_steps=10000,
     tb_dir="./runs",
     final=False,
     embedding_size=768,
@@ -164,7 +153,6 @@ def go(
     gradient_clipping=1.0,
     sample_length=200,
     attention_type="default",
-    sep_layers=False
 ):
 
     if seed < 0:
@@ -176,8 +164,8 @@ def go(
     wandb.init(
         project="distill-transformer",
         config={
-            "min_learning_rate": lr_min,
-            "max_learning_rate": lr_max,
+            "learning_rate": lr,
+            "batch_size": batch_size,
             "embedding_size": embedding_size,
             "num_heads": num_heads,
             "context": context,
@@ -197,131 +185,85 @@ def go(
         else (data_train, data_val)
     )
 
+    # Print GPU information
+    if torch.cuda.is_available():
+        gpu_name = torch.cuda.get_device_name(0)
+        gpu_mem_total = torch.cuda.get_device_properties(0).total_memory / 1e9
+        gpu_mem_reserved = torch.cuda.memory_reserved(0) / 1e9
+        gpu_mem_allocated = torch.cuda.memory_allocated(0) / 1e9
+        gpu_mem_free = gpu_mem_total - gpu_mem_reserved - gpu_mem_allocated
+        
+        print(f"Using GPU: {gpu_name}")
+        print(f"Total Memory: {gpu_mem_total:.2f} GB")
+        print(f"Reserved Memory: {gpu_mem_reserved:.2f} GB")
+        print(f"Allocated Memory: {gpu_mem_allocated:.2f} GB")
+        print(f"Free Memory: {gpu_mem_free:.2f} GB")
+    else:
+        print("No GPU available, using CPU")
+
     # create the model
-    model = TwowayGen(
+    model = GTransformer(
         emb=embedding_size,
         heads=num_heads,
         depth=depth,
         seq_length=context,
         num_tokens=NUM_TOKENS,
         attention_type=attention_type,
-        sep_layers=False
     )
     if torch.cuda.is_available():
         model.cuda()
 
-    opt = torch.optim.Adam(lr=lr_min, params=model.parameters())
+    opt = torch.optim.Adam(lr=lr, params=model.parameters())
 
-    sch = torch.optim.lr_scheduler.OneCycleLR(
-        optimizer=opt,
-        max_lr=lr_max,
-        total_steps=num_batches,
-        pct_start=peak,
-        final_div_factor=(lr_max / lr_min),
-        anneal_strategy=anneal
-    )
+    # Define the warmup scheduler
+    sch = torch.optim.lr_scheduler.LambdaLR(opt, lambda i: min(i / (warmup_steps / batch_size), 1.0))
 
     # Training loop
     instances_seen = 0
     batches_seen = 0
     scaler = GradScaler()
 
-    batch_size_by_depth = {
-        1: 500,
-        2: 400,
-        3: 350,
-        4: 300,
-        5: 260,
-        6: 220,
-        7: 190,
-        8: 165,
-        9: 150,
-        10: 140,
-        11: 130,
-        12: 125
-    }
-
-    ema_values = [ExponentialMovingAverage(decay=0.50) for _ in range(depth)]
-    for ema in ema_values:
-        ema.update(1000)
-
-    for i in tqdm.trange(num_batches):
+    for i in tqdm.trange(num_batches): 
         batches_seen += 1
-        # Randomly choose the current depth for this batch from predefined options
-        current_depth = random.choice([d for d in batch_size_by_depth.keys()])
-        batch_size = batch_size_by_depth[current_depth]
 
-        # Prepare the batch
+        opt.zero_grad()
         source, target = sample_batch(data_train, length=context, batch_size=batch_size)
         instances_seen += source.size(0)
 
-        # Move data to GPU if available
         if torch.cuda.is_available():
             source, target = source.cuda(), target.cuda()
 
-        # Get memory usage before model computation
-        # allocated_before, reserved_before = get_memory_usage()
-
-        # Gradient zeroing and autocasting
-        opt.zero_grad()
+        # Wrap the forward pass in an autocast context
         with autocast():
-            # Get all layer outputs up to the current maximum depth
-            outputs = model(source, current_depth=current_depth)
+            output = model(source)  # forward pass
+            loss = F.nll_loss(output.transpose(2, 1), target, reduction="mean")
 
-            # Exclude None values from outputs and prepare for distillation
-            valid_outputs = [output for output in outputs if output is not None]
-
-            current_ema_values = [ema.value for ema in ema_values[:len(valid_outputs)]]
-
-            if len(valid_outputs) > 1:
-                loss, teacher_loss, ground_truth_losses = dynamic_distill_loss(target, valid_outputs, gamma=0.5, ema_values=current_ema_values)
-            else:
-                loss = F.cross_entropy(valid_outputs[0].transpose(2, 1), target, reduction="mean")
-                teacher_loss = loss
-                ground_truth_losses = [loss]
-
-        # Get memory usage after model computation
-        # allocated_after, reserved_after = get_memory_usage()
-
-        for idx, ema in enumerate(ema_values):
-            if idx < len(ground_truth_losses):
-                ema.update(ground_truth_losses[idx])
-
-        # Backward pass with gradient scaling
+        # Scale the loss and perform backward pass
         scaler.scale(loss).backward()
+
+        # Unscale the gradients before clipping
         scaler.unscale_(opt)
 
         # Gradient clipping
         if gradient_clipping > 0.0:
             nn.utils.clip_grad_norm_(model.parameters(), gradient_clipping)
 
-        # Optimizer and scaler steps
+        # Scaler step and update
         scaler.step(opt)
         scaler.update()
 
-        # Scheduler step
+        # Update the learning rate using the warmup scheduler
         sch.step()
 
-        # Select the lowest ground truth loss
-        best_ground_truth_loss = min(ground_truth_losses).item()
+        log_data = {}
+        log_data["output-layer-loss"] = float(loss.item()) * util.LOG2E
 
-        # Update EMAs and log data
-        log_data = {
-            "learning-rate": sch.get_last_lr()[0],
-            "batches_seen": batches_seen,
-            "output-layer-loss": best_ground_truth_loss * util.LOG2E
-        }
+        # Add each additional key directly
+        log_data["learning-rate"] = sch.get_last_lr()[0]
+        log_data["batches_seen"] = batches_seen
 
-        for idx, loss in enumerate(ground_truth_losses):
-            log_data[f"train-loss-{idx}"] = loss.item() * util.LOG2E
-
-        # Log the data to wandb
+        # Log the data
         wandb.log(log_data, step=instances_seen)
-
-        # # Print the current depth
-        # print(f"Current depth: {current_depth}")
-        # print(f"Memory Allocated Before: {allocated_before / (1024 ** 3):.2f} GB, After: {allocated_after / (1024 ** 3):.2f} GB")
-        # print(f"Memory Reserved Before: {reserved_before / (1024 ** 3):.2f} GB, After: {reserved_after / (1024 ** 3):.2f} GB")
 
         # Validate every `test_every` steps. First we compute the
         # compression on the validation data (or a subset),
@@ -351,7 +293,7 @@ def go(
                 upto = data_test.size(0) if i == num_batches - 1 else test_subset
                 data_sub = data_test[:upto]
                 bits_per_byte = util.compute_compression(
-                    model, data_sub, context=context, batch_size=test_batchsize, ema_values=ema_values
+                    model, data_sub, context=context, batch_size=test_batchsize
                 )
                 # -- Since we're not computing gradients, we can increase the batch size a little from what we used in
                 #    training.
@@ -363,7 +305,6 @@ def go(
                 )
 
                 # -- 0.9 bit per byte is around the state of the art.
-
 
 
 if __name__ == "__main__":

@@ -180,6 +180,22 @@ def go(
         else (data_train, data_val)
     )
 
+    # Print GPU information
+    if torch.cuda.is_available():
+        gpu_name = torch.cuda.get_device_name(0)
+        gpu_mem_total = torch.cuda.get_device_properties(0).total_memory / 1e9
+        gpu_mem_reserved = torch.cuda.memory_reserved(0) / 1e9
+        gpu_mem_allocated = torch.cuda.memory_allocated(0) / 1e9
+        gpu_mem_free = gpu_mem_total - gpu_mem_reserved - gpu_mem_allocated
+        
+        print(f"Using GPU: {gpu_name}")
+        print(f"Total Memory: {gpu_mem_total:.2f} GB")
+        print(f"Reserved Memory: {gpu_mem_reserved:.2f} GB")
+        print(f"Allocated Memory: {gpu_mem_allocated:.2f} GB")
+        print(f"Free Memory: {gpu_mem_free:.2f} GB")
+    else:
+        print("No GPU available, using CPU")
+
     # create the model
     model = GTransformer(
         emb=embedding_size,
@@ -218,14 +234,10 @@ def go(
         if torch.cuda.is_available():
             source, target = source.cuda(), target.cuda()
 
-        allocated_before, reserved_before = get_memory_usage()
-
         # Wrap the forward pass in an autocast context
         with autocast():
             output = model(source)  # forward pass
             loss = F.nll_loss(output.transpose(2, 1), target, reduction="mean")
-
-        allocated_after, reserved_after = get_memory_usage()
 
         # Scale the loss and perform backward pass
         scaler.scale(loss).backward()
@@ -253,9 +265,6 @@ def go(
 
         # Log the data
         wandb.log(log_data, step=instances_seen)
-     
-        print(f"Memory Allocated Before: {allocated_before / (1024 ** 3):.2f} GB, After: {allocated_after / (1024 ** 3):.2f} GB")
-        print(f"Memory Reserved Before: {reserved_before / (1024 ** 3):.2f} GB, After: {reserved_after / (1024 ** 3):.2f} GB")
 
         # Validate every `test_every` steps. First we compute the
         # compression on the validation data (or a subset),
