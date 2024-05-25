@@ -337,20 +337,12 @@ def go(
                 if torch.cuda.is_available():
                     seed = seed.cuda()
 
-                sample_sequence(
-                    model,
-                    seed=seed,
-                    max_context=context,
-                    verbose=True,
-                    length=sample_length,
-                )
-
                 ## Compute validation bits per byte
 
                 upto = data_test.size(0) if i == num_batches - 1 else test_subset
                 data_sub = data_test[:upto]
                 bits_per_byte = util.compute_compression(
-                    model, data_sub, context=context, batch_size=test_batchsize
+                    model, data_sub, context=context, batch_size=test_batchsize, ema_values=ema_values
                 )
                 # -- Since we're not computing gradients, we can increase the batch size a little from what we used in
                 #    training.
