@@ -310,7 +310,8 @@ def go(
             log_data[f"train-loss-{idx}"] = loss.item() * util.LOG2E
 
         for idx, ema in enumerate(ema_values):
-            log_data[f"ema-{idx}"] = ema.value.item()
+            # Directly use ema.value if it's an int or float
+            log_data[f"ema-{idx}"] = ema.value if isinstance(ema.value, (int, float)) else ema.value.item()
 
         # Log the data to wandb
         wandb.log(log_data, step=instances_seen)
