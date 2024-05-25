@@ -2,6 +2,7 @@ import torch, os, time, math, tqdm, random, sys, gzip
 
 import torch.nn.functional as F
 import torch.distributions as dist
+from former import util
 
 import numpy as np
 
@@ -273,7 +274,7 @@ LOG2E = math.log2(math.e)
 LOGE2 = math.log(2.0)
 
 
-def compute_compression(model, data, context, batch_size):
+def compute_compression(model, data, context, batch_size, ema_values):
     """
     Compute the _compression_ of a dataset under a model. That is, given a model, in how many bits could we represent
     the dataset. This requires us to turn a given probability distribution into a code for the outcomes.
@@ -282,19 +283,23 @@ def compute_compression(model, data, context, batch_size):
 
     :param model: A sequence-to-sequence model that takes as input a (sub) sequence of integers and produces a probability
     distributuion on the output.
-    :param data: A singe list of integers representing the  data
+    :param data: A single list of integers representing the data
+    :param ema_values: List of EMA values for each layer
     :return: The result of the computation in "bits per byte". That is, how many bits does the compressed representation
     spend on each byte (=ASCII character) of the raw data.
     """
 
     bits, tot = 0.0, 0
     batch = []
-    # Buffer, every time it fills up, we run it through the model
-    # --- For the sake of speed we want to process the data in batches. For each token in the data, we make a
-    #     prediction based on all the `context` tokens before it. This means that for each subsequence in the batch, we
-    #     need to shift the start/end indices ahead by one token.
-    #
-    #     After we pass the batch through the model, we look at only the probabilities predicted for the last token.
+
+    # Print EMA values for each layer
+    print("EMA values for each layer:")
+    for idx, ema in enumerate(ema_values):
+        print(f"Layer {idx + 1}: {ema.value}")
+
+    # Select the layer with the lowest EMA value
+    best_layer_idx = np.argmin([ema.value for ema in ema_values])
+    print(f"Selected layer: {best_layer_idx + 1} (lowest EMA value: {ema_values[best_layer_idx].value})")
 
     for current in range(data.size(0)):
 
@@ -328,26 +333,23 @@ def compute_compression(model, data, context, batch_size):
             inputs = all[:, :-1]  # input
             target = all[:, -1]  # target values
 
-            output = model(inputs)  # Call the model
+            outputs = model(inputs, current_depth=12)  # Call the model
 
-            # Check if the output is a tuple (multiple tensors) and use the first tensor (assuming it contains the logits)
-            if isinstance(output, tuple):
-                output = output[0]
+            # Get the output of the best layer
+            best_output = outputs[best_layer_idx]
 
-            # Apply log softmax to the output tensor to get log probabilities
-            output = F.log_softmax(output, dim=-1)
+            # Apply log softmax to the best layer's output to get log probabilities
+            log_probs = F.log_softmax(best_output, dim=-1)
 
-            lnprobs = output[torch.arange(b, device=d()), -1, target]
-            log2probs = lnprobs * LOG2E
-            # -- The model produces natural logarithms of probabilities, but we need base-2 logarithms of the
-            #    probabilities, since these give us bits.
+            # Compute log2 probabilities for the best layer
+            log2probs = log_probs[torch.arange(b, device=log_probs.device), -1, target] * util.LOG2E
 
-            bits += (
-                -log2probs.sum()
-            )  # Add the bits for each character (the negative log_2 probabilties) to the running total
+            # Accumulate the bits-per-byte for the selected layer's output
+            bits += (-log2probs.sum()).item()
             batch = []  # clear the buffer
 
     return bits / data.size(0)  # bits-per-byte
+
 
 
 def estimate_compression(
@@ -522,11 +524,11 @@ def dynamic_distill_loss(target, y_outputs, gamma, ema_values):
     - The computed total loss.
     """
 
-    # Find the index of the output with the lowest EMA value to use as the teacher
-    teacher_index = ema_values.index(min(ema_values))
+    # # Find the index of the output with the lowest EMA value to use as the teacher
+    # teacher_index = ema_values.index(min(ema_values))
 
     # Use the output with the lowest EMA as the teacher
-    teacher_output = y_outputs[teacher_index]
+    teacher_output = y_outputs[-1]
 
     # Compute the teacher loss first
     teacher_loss = F.cross_entropy(teacher_output.transpose(2, 1), target, reduction="mean")
@@ -541,21 +543,17 @@ def dynamic_distill_loss(target, y_outputs, gamma, ema_values):
 
     # Compute distillation and ground truth losses for each y_output
     for idx, y in enumerate(y_outputs):
-        if idx == teacher_index:
-            # Append the previously computed teacher ground truth loss
-            losses.append(teacher_loss)
-        else:
-            # Compute distillation loss for the current intermediate output
-            distill_loss = F.cross_entropy(y.transpose(2, 1), teacher_probs, reduction="mean")
+        # Compute distillation loss for the current intermediate output
+        distill_loss = F.cross_entropy(y.transpose(2, 1), teacher_probs, reduction="mean")
 
-            # Compute direct ground truth loss for the current intermediate output
-            ground_truth_loss = F.cross_entropy(y.transpose(2, 1), target, reduction="mean")
+        # Compute direct ground truth loss for the current intermediate output
+        ground_truth_loss = F.cross_entropy(y.transpose(2, 1), target, reduction="mean")
 
-            # Add distillation and ground truth losses to the student loss
-            student_loss += (distill_loss * 0.5) + (ground_truth_loss * 0.5)
+        # Add distillation and ground truth losses to the student loss
+        student_loss += (distill_loss * 0.0) + (ground_truth_loss * 1.0)
 
-            # Append the computed ground truth loss
-            losses.append(ground_truth_loss)
+        # Append the computed ground truth loss
+        losses.append(ground_truth_loss)
 
     # Scale the combined student losses with gamma and add to teacher loss
     loss = teacher_loss + gamma * student_loss
