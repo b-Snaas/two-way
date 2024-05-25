@@ -220,12 +220,12 @@ def go(
         depth: 125
     }
 
-       # Learning rates by depth
+    # Learning rates by depth
     lr_by_depth = {
-        depth // 4: 3e-4,
-        2 * (depth // 4): 2e-4,
-        3 * (depth // 4): 1e-4,
-        depth: 3e-5
+        quarter_depth: 5e-4,
+        2 * quarter_depth: 3e-4,
+        3 * quarter_depth: 1e-4,
+        depth: 5e-5
     }
 
     # Initializing optimizer with the smallest learning rate
@@ -259,9 +259,6 @@ def go(
         if torch.cuda.is_available():
             source, target = source.cuda(), target.cuda()
 
-        # Get memory usage before model computation
-        # allocated_before, reserved_before = get_memory_usage()
-
         # Gradient zeroing and autocasting
         opt.zero_grad()
         with autocast():
@@ -280,9 +277,6 @@ def go(
                 teacher_loss = loss
                 ground_truth_losses = [loss]
 
-        # Get memory usage after model computation
-        # allocated_after, reserved_after = get_memory_usage()
-
         for idx, ema in enumerate(ema_values):
             if idx < len(ground_truth_losses):
                 ema.update(ground_truth_losses[idx])
@@ -290,6 +284,9 @@ def go(
         # Backward pass with gradient scaling
         scaler.scale(loss).backward()
         scaler.unscale_(opt)
+
+        # Calculate gradient norms
+        grad_norm = torch.norm(torch.stack([torch.norm(p.grad.detach(), 2) for p in model.parameters() if p.grad is not None]), 2)
 
         # Gradient clipping
         if gradient_clipping > 0.0:
@@ -304,11 +301,16 @@ def go(
         log_data = {
             "learning-rate": opt.param_groups[0]['lr'],
             "batches_seen": batches_seen,
-            "output-layer-loss": ground_truth_losses[-1].item() * util.LOG2E
+            "current_depth": current_depth,  # Include current depth in log data
+            "output-layer-loss": ground_truth_losses[-1].item() * util.LOG2E,
+            "gradient-norm": grad_norm.item()
         }
 
         for idx, loss in enumerate(ground_truth_losses):
             log_data[f"train-loss-{idx}"] = loss.item() * util.LOG2E
+
+        for idx, ema in enumerate(ema_values):
+            log_data[f"ema-{idx}"] = ema.value.item()
 
         # Log the data to wandb
         wandb.log(log_data, step=instances_seen)
