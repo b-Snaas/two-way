@@ -124,15 +124,6 @@ def get_memory_usage():
     reserved = torch.cuda.memory_reserved()
     return allocated, reserved
 
-
-import torch
-import random
-import wandb
-import tqdm
-from torch.cuda.amp import autocast, GradScaler
-import torch.nn as nn
-import torch.nn.functional as F
-
 def go(
     num_batches=1_000_000,
     batch_size=32,

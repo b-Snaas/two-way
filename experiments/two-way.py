@@ -133,6 +133,13 @@ class ExponentialMovingAverage:
         else:
             self.value = self.decay * self.value + (1 - self.decay) * new_value
 
+# Define a function to update the learning rate based on the depth
+def update_lr(opt, current_depth, step, batch_size, lr_by_depth, warmup_steps):
+    for param_group in opt.param_groups:
+        base_lr = lr_by_depth[current_depth]
+        warmup_factor = min(step / (warmup_steps / batch_size), 1.0)
+        param_group['lr'] = base_lr * warmup_factor
+
 # Define a function to get memory usage
 def get_memory_usage():
     allocated = torch.cuda.memory_allocated()
@@ -142,10 +149,6 @@ def get_memory_usage():
 def go(
     num_batches=1_000_000,
     data=None,
-    lr_min=1e-4,
-    lr_max=3e-4,
-    peak=0.2,
-    anneal= "cos",
     tb_dir="./runs",
     final=False,
     embedding_size=768,
@@ -160,6 +163,7 @@ def go(
     gradient_clipping=1.0,
     sample_length=200,
     attention_type="default",
+    warmup_steps=10000
 ):
 
     if seed < 0:
@@ -171,8 +175,6 @@ def go(
     wandb.init(
         project="distill-transformer",
         config={
-            "min_learning_rate": lr_min,
-            "max_learning_rate": lr_max,
             "embedding_size": embedding_size,
             "num_heads": num_heads,
             "context": context,
@@ -204,17 +206,6 @@ def go(
     if torch.cuda.is_available():
         model.cuda()
 
-    opt = torch.optim.Adam(lr=lr_min, params=model.parameters())
-
-    sch = torch.optim.lr_scheduler.OneCycleLR(
-        optimizer=opt,
-        max_lr=lr_max,
-        total_steps=num_batches,
-        pct_start=peak,
-        final_div_factor=(lr_max / lr_min),
-        anneal_strategy=anneal
-    )
-
     # Training loop
     instances_seen = 0
     batches_seen = 0
@@ -229,6 +220,17 @@ def go(
         depth: 125
     }
 
+       # Learning rates by depth
+    lr_by_depth = {
+        depth // 4: 3e-4,
+        2 * (depth // 4): 2e-4,
+        3 * (depth // 4): 1e-4,
+        depth: 3e-5
+    }
+
+    # Initializing optimizer with the smallest learning rate
+    opt = torch.optim.Adam(lr=min(lr_by_depth.values()), params=model.parameters())
+
     ema1 = ExponentialMovingAverage(decay=0.50)
     ema1.update(1000)
     ema2 = ExponentialMovingAverage(decay=0.50)
@@ -238,7 +240,6 @@ def go(
     ema4 = ExponentialMovingAverage(decay=0.50)
     ema4.update(1000)
 
-
     ema_values = [ema1, ema2, ema3, ema4]
 
     for i in tqdm.trange(num_batches):
@@ -246,6 +247,9 @@ def go(
         # Randomly choose the current depth for this batch from predefined options
         current_depth = random.choice([quarter_depth, 2 * quarter_depth, 3 * quarter_depth, depth])
         batch_size = batch_size_by_depth[current_depth]
+
+        # Update optimizer's learning rate according to the depth and warmup schedule
+        update_lr(opt, current_depth, batches_seen, batch_size, lr_by_depth, warmup_steps)
 
         # Prepare the batch
         source, target = sample_batch(data_train, length=context, batch_size=batch_size)
@@ -255,7 +259,7 @@ def go(
         if torch.cuda.is_available():
             source, target = source.cuda(), target.cuda()
 
-            # Get memory usage before model computation
+        # Get memory usage before model computation
         # allocated_before, reserved_before = get_memory_usage()
 
         # Gradient zeroing and autocasting
@@ -295,20 +299,16 @@ def go(
         scaler.step(opt)
         scaler.update()
 
-        # Scheduler step
-        sch.step()
-
         # Update EMAs and log data
         ema_values = [ema1, ema2, ema3, ema4]
         log_data = {
-        "learning-rate": sch.get_last_lr()[0],
-        "batches_seen": batches_seen,
-        "output-layer-loss": ground_truth_losses[-1].item() * util.LOG2E
-    }
+            "learning-rate": opt.param_groups[0]['lr'],
+            "batches_seen": batches_seen,
+            "output-layer-loss": ground_truth_losses[-1].item() * util.LOG2E
+        }
 
         for idx, loss in enumerate(ground_truth_losses):
             log_data[f"train-loss-{idx}"] = loss.item() * util.LOG2E
-
 
         # Log the data to wandb
         wandb.log(log_data, step=instances_seen)
