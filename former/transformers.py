@@ -94,7 +94,7 @@ class TwowayGen(nn.Module):
         self.sep_layers = sep_layers
 
         self.toprobs = nn.Linear(emb, num_tokens)
-        self.dist_layers = nn.ModuleList([nn.Linear(emb, num_tokens) for _ in range(depth)])
+        self.dist_layers = nn.ModuleList([nn.Linear(emb, num_tokens) for _ in range(4)])
 
         self.distpoint = distpoint
 
@@ -121,18 +121,43 @@ class TwowayGen(nn.Module):
         ].expand(b, t, e)
         x = tokens + positions
 
-        dist_outputs = [None] * len(self.tblocks)
+        # Calculate the indices for the distillation points
+        fourth_depth = len(self.tblocks) // 4
+        dist_points = [fourth_depth - 1, 2 * fourth_depth - 1, 3 * fourth_depth - 1, 4 * fourth_depth - 1]
+
+        # Initialize outputs for the distillation points
+        dist_output_1st = None
+        dist_output_2nd = None
+        dist_output_3rd = None
+        dist_output_4th = None
 
         for i, block in enumerate(self.tblocks[:current_depth]):
             x = block(x)
-            dist_outputs[i] = x
+
+            # Capture the outputs at the distillation points
+            if i == dist_points[0]:
+                dist_output_1st = x
+            elif i == dist_points[1]:
+                dist_output_2nd = x
+            elif i == dist_points[2]:
+                dist_output_3rd = x
+            elif i == dist_points[3]:
+                dist_output_4th = x
 
         if self.sep_layers:
-            y_outputs = [None if output is None else dist_layer(output) for output, dist_layer in zip(dist_outputs, self.dist_layers)]
+            # Apply the distillation layers to the distillation outputs if needed
+            y_1st = None if dist_output_1st is None else self.dist_layers[0](dist_output_1st)
+            y_2nd = None if dist_output_2nd is None else self.dist_layers[1](dist_output_2nd)
+            y_3rd = None if dist_output_3rd is None else self.dist_layers[2](dist_output_3rd)
+            y_4th = None if dist_output_4th is None else self.dist_layers[3](dist_output_4th)
         else:
-            y_outputs = [None if output is None else self.toprobs(output) for output in dist_outputs]
+            # Apply the top layer to the distillation outputs if needed
+            y_1st = None if dist_output_1st is None else self.toprobs(dist_output_1st)
+            y_2nd = None if dist_output_2nd is None else self.toprobs(dist_output_2nd)
+            y_3rd = None if dist_output_3rd is None else self.toprobs(dist_output_3rd)
+            y_4th = None if dist_output_4th is None else self.toprobs(dist_output_4th)
 
-        return y_outputs
+        return y_1st, y_2nd, y_3rd, y_4th
 
 
 
