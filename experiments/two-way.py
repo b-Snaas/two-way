@@ -199,6 +199,7 @@ def go(
             "num_heads": num_heads,
             "context": context,
             "depth": depth,
+            "gamma": gamma,
             "seed": seed,
             "gradient_clipping": gradient_clipping,
             "lr_by_depth": lr_by_depth,
