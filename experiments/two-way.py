@@ -128,10 +128,13 @@ class ExponentialMovingAverage:
         self.value = None
 
     def update(self, new_value):
+        if isinstance(new_value, torch.Tensor):
+            new_value = new_value.cpu().item()
         if self.value is None:
             self.value = new_value
         else:
             self.value = self.decay * self.value + (1 - self.decay) * new_value
+
 
 # Define a function to update the learning rate based on the depth
 def update_lr(opt, current_depth, step, batch_size, lr_by_depth, warmup_steps):
@@ -173,6 +176,22 @@ def go(
     else:
         torch.manual_seed(seed)
 
+    quarter_depth = depth // 4
+
+    batch_size_by_depth = {
+        quarter_depth: 450,
+        2 * quarter_depth: 245,
+        3 * quarter_depth: 175,
+        depth: 125
+    }
+
+    lr_by_depth = {
+        quarter_depth: 5e-4,
+        2 * quarter_depth: 3e-4,
+        3 * quarter_depth: 1e-4,
+        depth: 5e-5
+    }
+
     wandb.init(
         project="distill-transformer",
         config={
@@ -182,6 +201,8 @@ def go(
             "depth": depth,
             "seed": seed,
             "gradient_clipping": gradient_clipping,
+            "lr_by_depth": lr_by_depth,
+            "batch_size_by_depth": batch_size_by_depth
         },
     )
 
@@ -211,23 +232,6 @@ def go(
     instances_seen = 0
     batches_seen = 0
     scaler = GradScaler()
-
-    quarter_depth = depth // 4
-
-    batch_size_by_depth = {
-        quarter_depth: 450,
-        2 * quarter_depth: 245,
-        3 * quarter_depth: 175,
-        depth: 125
-    }
-
-    # Learning rates by depth
-    lr_by_depth = {
-        quarter_depth: 5e-4,
-        2 * quarter_depth: 3e-4,
-        3 * quarter_depth: 1e-4,
-        depth: 5e-5
-    }
 
     # Initializing optimizer with the smallest learning rate
     opt = torch.optim.Adam(lr=min(lr_by_depth.values()), params=model.parameters())
