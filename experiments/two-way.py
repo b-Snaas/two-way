@@ -179,7 +179,7 @@ def go(
     quarter_depth = depth // 4
 
     batch_size_by_depth = {
-        quarter_depth: 455,
+        quarter_depth: 460,
         2 * quarter_depth: 245,
         3 * quarter_depth: 175,
         depth: 125
@@ -313,7 +313,7 @@ def go(
         log_data = {
             "learning-rate": opt.param_groups[0]['lr'],
             "batches_seen": batches_seen,
-            "current_depth": current_depth,  # Include current depth in log data
+            "current_depth": current_depth,
             "output-layer-loss": ground_truth_losses[-1].item() * util.LOG2E,
             "gradient-norm": grad_norm.item()
         }
