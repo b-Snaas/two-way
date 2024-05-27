@@ -198,7 +198,7 @@ def go(
         quarter_depth: 260,
         2 * quarter_depth: 135,
         3 * quarter_depth: 90,
-        depth: 70
+        depth: 75
     }
 
     lr_by_depth = {
