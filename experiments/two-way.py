@@ -189,7 +189,7 @@ def go(
         quarter_depth: 5e-4,
         2 * quarter_depth: 1e-4,
         3 * quarter_depth: 5e-5,
-        depth: 1e-5
+        depth: 3e-5
     }
 
     wandb.init(
