@@ -274,7 +274,7 @@ LOG2E = math.log2(math.e)
 LOGE2 = math.log(2.0)
 
 
-def compute_compression(model, data, context, batch_size, ema_values=None):
+def compute_compression(model, data, context, batch_size, depth, ema_values=None):
     """
     Compute the _compression_ of a dataset under a model. That is, given a model, in how many bits could we represent
     the dataset. This requires us to turn a given probability distribution into a code for the outcomes.
@@ -338,7 +338,7 @@ def compute_compression(model, data, context, batch_size, ema_values=None):
             inputs = all[:, :-1]  # input
             target = all[:, -1]  # target values
 
-            outputs = model(inputs, current_depth=24)  # Call the model
+            outputs = model(inputs, depth=depth)  # Call the model
 
             # Get the output of the best layer
             best_output = outputs[best_layer_idx]
@@ -354,7 +354,6 @@ def compute_compression(model, data, context, batch_size, ema_values=None):
             batch = []  # clear the buffer
 
     return bits / data.size(0)  # bits-per-byte
-
 
 
 def estimate_compression(
