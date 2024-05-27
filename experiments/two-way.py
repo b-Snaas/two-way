@@ -179,17 +179,17 @@ def go(
     quarter_depth = depth // 4
 
     batch_size_by_depth = {
-        quarter_depth: 255,
-        2 * quarter_depth: 130,
-        3 * quarter_depth: 85,
-        depth: 65
+        quarter_depth: 455,
+        2 * quarter_depth: 245,
+        3 * quarter_depth: 175,
+        depth: 125
     }
 
     lr_by_depth = {
-        quarter_depth: 5e-4,
-        2 * quarter_depth: 1e-4,
-        3 * quarter_depth: 5e-5,
-        depth: 1e-5
+        quarter_depth: 1e-3,
+        2 * quarter_depth: 5e-4,
+        3 * quarter_depth: 1e-4,
+        depth: 5e-5
     }
 
     wandb.init(
