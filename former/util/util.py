@@ -338,7 +338,7 @@ def compute_compression(model, data, context, batch_size, depth, ema_values=None
             inputs = all[:, :-1]  # input
             target = all[:, -1]  # target values
 
-            outputs = model(inputs, depth=depth)  # Call the model
+            outputs = model(inputs, current_depth=depth)
 
             # Get the output of the best layer
             best_output = outputs[best_layer_idx]
