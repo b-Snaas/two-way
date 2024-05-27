@@ -274,7 +274,7 @@ LOG2E = math.log2(math.e)
 LOGE2 = math.log(2.0)
 
 
-def compute_compression(model, data, context, batch_size, ema_values):
+def compute_compression(model, data, context, batch_size, ema_values=None):
     """
     Compute the _compression_ of a dataset under a model. That is, given a model, in how many bits could we represent
     the dataset. This requires us to turn a given probability distribution into a code for the outcomes.
@@ -284,7 +284,7 @@ def compute_compression(model, data, context, batch_size, ema_values):
     :param model: A sequence-to-sequence model that takes as input a (sub) sequence of integers and produces a probability
     distributuion on the output.
     :param data: A single list of integers representing the data
-    :param ema_values: List of EMA values for each layer
+    :param ema_values: Optional list of EMA values for each layer
     :return: The result of the computation in "bits per byte". That is, how many bits does the compressed representation
     spend on each byte (=ASCII character) of the raw data.
     """
@@ -292,14 +292,19 @@ def compute_compression(model, data, context, batch_size, ema_values):
     bits, tot = 0.0, 0
     batch = []
 
-    # Print EMA values for each layer
-    print("EMA values for each layer:")
-    for idx, ema in enumerate(ema_values):
-        print(f"Layer {idx + 1}: {ema.value}")
+    if ema_values:
+        # Print EMA values for each layer
+        print("EMA values for each layer:")
+        for idx, ema in enumerate(ema_values):
+            print(f"Layer {idx + 1}: {ema.value}")
 
-    # Select the layer with the lowest EMA value
-    best_layer_idx = np.argmin([ema.value for ema in ema_values])
-    print(f"Selected layer: {best_layer_idx + 1} (lowest EMA value: {ema_values[best_layer_idx].value})")
+        # Select the layer with the lowest EMA value
+        best_layer_idx = np.argmin([ema.value for ema in ema_values])
+        print(f"Selected layer: {best_layer_idx + 1} (lowest EMA value: {ema_values[best_layer_idx].value})")
+    else:
+        # Default to the deepest layer if EMA values are not provided
+        best_layer_idx = -1
+        print("No EMA values provided, using the output of the deepest layer.")
 
     for current in range(data.size(0)):
 
