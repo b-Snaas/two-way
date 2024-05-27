@@ -1,12 +1,16 @@
-from former import util, DistGen
-from former.util import here, compute_ema_losses
+from former import util, TwowayGen
+from former.util import here, dynamic_distill_loss
 import torch
 from torch import nn
 import torch.nn.functional as F
 import torch.distributions as dist
 from torch.cuda.amp import autocast, GradScaler
+import torch.autograd.profiler as profiler
 import numpy as np
 import random, tqdm, gzip, fire, wandb
+import gc
+
+import warnings
 
 # NB, the enwik8 data contains tokens from 9 to 240, but well round up to the nearest
 # power of two.
@@ -103,9 +107,7 @@ def sample_sequence(
         input = sequence[-max_context:]
 
         # Run the current input through the model
-        outputs = model(input[None, :])
-
-        output = outputs[-1]
+        output = model(input[None, :], current_depth=12)
 
         # Sample the next token from the probabilitys at the last position of the output.
         c = sample(output[0, -1, :], temperature)
@@ -120,21 +122,43 @@ def sample_sequence(
     print()
     return seed
 
+class ExponentialMovingAverage:
+    def __init__(self, decay=0.99):
+        self.decay = decay
+        self.value = None
+
+    def update(self, new_value):
+        if isinstance(new_value, torch.Tensor):
+            new_value = new_value.cpu().item()
+        if self.value is None:
+            self.value = new_value
+        else:
+            self.value = self.decay * self.value + (1 - self.decay) * new_value
+
+
+# Define a function to update the learning rate based on the depth
+def update_lr(opt, current_depth, step, batch_size, lr_by_depth, warmup_steps):
+    for param_group in opt.param_groups:
+        base_lr = lr_by_depth[current_depth]
+        warmup_factor = min(step / (warmup_steps / batch_size), 1.0)
+        param_group['lr'] = base_lr * warmup_factor
+
+# Define a function to get memory usage
+def get_memory_usage():
+    allocated = torch.cuda.memory_allocated()
+    reserved = torch.cuda.memory_reserved()
+    return allocated, reserved
 
 def go(
     num_batches=1_000_000,
-    batch_size=32,
     data=None,
-    lr_min=1e-4,
-    lr_max=3e-4,
-    peak=0.2,
-    anneal= "cos",
     tb_dir="./runs",
     final=False,
     embedding_size=768,
     num_heads=8,
     context=128,
     depth=12,
+    gamma=0.5,
     seed=1,
     test_every=1500,
     test_subset=100000,
@@ -143,6 +167,7 @@ def go(
     gradient_clipping=1.0,
     sample_length=200,
     attention_type="default",
+    warmup_steps=10000
 ):
 
     if seed < 0:
@@ -151,18 +176,34 @@ def go(
     else:
         torch.manual_seed(seed)
 
+    quarter_depth = depth // 4
+
+    batch_size_by_depth = {
+        quarter_depth: 465,
+        2 * quarter_depth: 255,
+        3 * quarter_depth: 175,
+        depth: 130
+    }
+
+    lr_by_depth = {
+        quarter_depth: 1e-3,
+        2 * quarter_depth: 5e-4,
+        3 * quarter_depth: 1e-4,
+        depth: 5e-5
+    }
+
     wandb.init(
-        project="your_project_name",
+        project="distill-transformer",
         config={
-            "min_learning_rate": lr_min,
-            "max_learning_rate": lr_max,
-            "batch_size": batch_size,
             "embedding_size": embedding_size,
             "num_heads": num_heads,
             "context": context,
             "depth": depth,
+            "gamma": gamma,
             "seed": seed,
             "gradient_clipping": gradient_clipping,
+            "lr_by_depth": lr_by_depth,
+            "batch_size_by_depth": batch_size_by_depth
         },
     )
 
@@ -177,7 +218,7 @@ def go(
     )
 
     # create the model
-    model = DistGen(
+    model = TwowayGen(
         emb=embedding_size,
         heads=num_heads,
         depth=depth,
@@ -188,71 +229,109 @@ def go(
     if torch.cuda.is_available():
         model.cuda()
 
-    opt = torch.optim.Adam(lr=lr_min, params=model.parameters())
-
-    sch = torch.optim.lr_scheduler.OneCycleLR(
-        optimizer=opt,
-        max_lr=lr_max,
-        total_steps=num_batches,
-        pct_start=peak,
-        final_div_factor=1e10,
-        anneal_strategy=anneal
-    )
-
     # Training loop
     instances_seen = 0
+    batches_seen = 0
     scaler = GradScaler()
 
-    # dropout_schedule = {
-    # 80000: 0.1,
-    # }
-    
-    # Initialize EMA losses very high
-    ema_losses = [float('inf')] * 4
+    # Initializing optimizer with the smallest learning rate
+    opt = torch.optim.Adam(lr=min(lr_by_depth.values()), params=model.parameters())
 
-    for i in tqdm.trange(num_batches):    
-        # if i in dropout_schedule:
-        #     new_dropout_rate = dropout_schedule[i]
-        #     for block in model.tblocks:
-        #         block.update_dropout(new_dropout_rate)
-                
-        opt.zero_grad()
+    ema1 = ExponentialMovingAverage(decay=0.50)
+    ema1.update(1000)
+    ema2 = ExponentialMovingAverage(decay=0.50)
+    ema2.update(1000)
+    ema3 = ExponentialMovingAverage(decay=0.50)
+    ema3.update(1000)
+    ema4 = ExponentialMovingAverage(decay=0.50)
+    ema4.update(1000)
+
+    ema_values = [ema1, ema2, ema3, ema4]
+
+    for i in tqdm.trange(num_batches):
+        batches_seen += 1
+        # Randomly choose the current depth for this batch from predefined options
+        current_depth = random.choice([quarter_depth, 2 * quarter_depth, 3 * quarter_depth, depth])
+        batch_size = batch_size_by_depth[current_depth]
+
+        # Update optimizer's learning rate according to the depth and warmup schedule
+        update_lr(opt, current_depth, batches_seen, batch_size, lr_by_depth, warmup_steps)
+
+        # Prepare the batch
         source, target = sample_batch(data_train, length=context, batch_size=batch_size)
         instances_seen += source.size(0)
 
+        # Move data to GPU if available
         if torch.cuda.is_available():
             source, target = source.cuda(), target.cuda()
 
-        # Wrap the forward pass in an autocast context
+        # # memory usage
+        # allocated_before, reserved_before = get_memory_usage()
+
+        # Gradient zeroing and autocasting
+        opt.zero_grad()
         with autocast():
-            outputs = model(source)
-            losses, ema_losses = compute_ema_losses(outputs, target, ema_losses)
+            # Get all layer outputs up to the current maximum depth
+            outputs = model(source, current_depth=current_depth)
 
-        # Aggregate all losses for backward pass
-        scaler.scale(losses[3]).backward()
+            # Exclude None values from outputs and prepare for distillation
+            valid_outputs = [output for output in outputs if output is not None]
 
-        # Unscale the gradients before clipping
+            current_ema_values = [ema.value for ema in ema_values[:len(valid_outputs)]]
+
+            if len(valid_outputs) > 1:
+                loss, teacher_loss, ground_truth_losses = dynamic_distill_loss(target, valid_outputs, gamma=gamma, ema_values=current_ema_values)
+            else:
+                loss = F.cross_entropy(valid_outputs[0].transpose(2, 1), target, reduction="mean")
+                teacher_loss = loss
+                ground_truth_losses = [loss]
+
+        for idx, ema in enumerate(ema_values):
+            if idx < len(ground_truth_losses):
+                ema.update(ground_truth_losses[idx])
+
+        # Backward pass with gradient scaling
+        scaler.scale(loss).backward()
         scaler.unscale_(opt)
+
+        # # Memory usage
+        # allocated_after, reserved_after = get_memory_usage()
+
+        # Calculate gradient norms
+        grad_norm = torch.norm(torch.stack([torch.norm(p.grad.detach(), 2) for p in model.parameters() if p.grad is not None]), 2)
 
         # Gradient clipping
         if gradient_clipping > 0.0:
             nn.utils.clip_grad_norm_(model.parameters(), gradient_clipping)
 
-        # Scaler step and update
+        # Optimizer and scaler steps
         scaler.step(opt)
         scaler.update()
 
-        sch.step()  # Update the learning rate
-
-        # Log the losses and learning rate with wandb
+        # Update EMAs and log data
+        ema_values = [ema1, ema2, ema3, ema4]
         log_data = {
-            "transformer/learning-rate": sch.get_last_lr()[0],
+            "learning-rate": opt.param_groups[0]['lr'],
+            "batches_seen": batches_seen,
+            "current_depth": current_depth,
+            "output-layer-loss": ground_truth_losses[-1].item() * util.LOG2E,
+            "gradient-norm": grad_norm.item()
         }
-        # Add individual loss and EMA logs
-        for idx, loss in enumerate(losses):
-            log_data[f"transformer/train-loss-layer-{idx+1}"] = float(loss.item()) * util.LOG2E
 
+        for idx, loss in enumerate(ground_truth_losses):
+            log_data[f"train-loss-{idx}"] = loss.item() * util.LOG2E
+
+        for idx, ema in enumerate(ema_values):
+            # Directly use ema.value if it's an int or float
+            log_data[f"ema-{idx}"] = ema.value if isinstance(ema.value, (int, float)) else ema.value.item()
+
+        # Log the data to wandb
         wandb.log(log_data, step=instances_seen)
+
+        # # Print the current depth
+        # print(f"Current depth: {current_depth}")
+        # print(f"Memory Allocated Before: {allocated_before / (1024 ** 3):.2f} GB, After: {allocated_after / (1024 ** 3):.2f} GB")
+        # print(f"Memory Reserved Before: {reserved_before / (1024 ** 3):.2f} GB, After: {reserved_after / (1024 ** 3):.2f} GB")
 
         # Validate every `test_every` steps. First we compute the
         # compression on the validation data (or a subset),
@@ -269,20 +348,12 @@ def go(
                 if torch.cuda.is_available():
                     seed = seed.cuda()
 
-                sample_sequence(
-                    model,
-                    seed=seed,
-                    max_context=context,
-                    verbose=True,
-                    length=sample_length,
-                )
-
                 ## Compute validation bits per byte
 
                 upto = data_test.size(0) if i == num_batches - 1 else test_subset
                 data_sub = data_test[:upto]
                 bits_per_byte = util.compute_compression(
-                    model, data_sub, context=context, batch_size=test_batchsize
+                    model, data_sub, context=context, batch_size=test_batchsize, depth=depth, ema_values=ema_values
                 )
                 # -- Since we're not computing gradients, we can increase the batch size a little from what we used in
                 #    training.
