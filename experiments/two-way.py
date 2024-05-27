@@ -107,7 +107,7 @@ def sample_sequence(
         input = sequence[-max_context:]
 
         # Run the current input through the model
-        output = model(input[None, :], current_depth=12)
+        output = model(input[None, :], current_depth=24)
 
         # Sample the next token from the probabilitys at the last position of the output.
         c = sample(output[0, -1, :], temperature)
@@ -157,7 +157,7 @@ def go(
     embedding_size=768,
     num_heads=8,
     context=128,
-    depth=12,
+    depth=24,
     gamma=0.5,
     seed=1,
     test_every=1500,
@@ -176,20 +176,36 @@ def go(
     else:
         torch.manual_seed(seed)
 
+        # Print GPU information
+    if torch.cuda.is_available():
+        gpu_name = torch.cuda.get_device_name(0)
+        gpu_mem_total = torch.cuda.get_device_properties(0).total_memory / 1e9
+        gpu_mem_reserved = torch.cuda.memory_reserved(0) / 1e9
+        gpu_mem_allocated = torch.cuda.memory_allocated(0) / 1e9
+        gpu_mem_free = gpu_mem_total - gpu_mem_reserved - gpu_mem_allocated
+        
+        print(f"Using GPU: {gpu_name}")
+        print(f"Total Memory: {gpu_mem_total:.2f} GB")
+        print(f"Reserved Memory: {gpu_mem_reserved:.2f} GB")
+        print(f"Allocated Memory: {gpu_mem_allocated:.2f} GB")
+        print(f"Free Memory: {gpu_mem_free:.2f} GB")
+    else:
+        print("No GPU available, using CPU")
+
     quarter_depth = depth // 4
 
     batch_size_by_depth = {
-        quarter_depth: 450,
-        2 * quarter_depth: 245,
-        3 * quarter_depth: 175,
-        depth: 125
+        quarter_depth: 240,
+        2 * quarter_depth: 125,
+        3 * quarter_depth: 80,
+        depth: 60
     }
 
     lr_by_depth = {
-        quarter_depth: 1.5e-3,
-        2 * quarter_depth: 5e-4,
-        3 * quarter_depth: 1e-4,
-        depth: 5e-5
+        quarter_depth: 5e-4,
+        2 * quarter_depth: 1e-4,
+        3 * quarter_depth: 5e-5,
+        depth: 1e-5
     }
 
     wandb.init(
@@ -265,6 +281,9 @@ def go(
         if torch.cuda.is_available():
             source, target = source.cuda(), target.cuda()
 
+        # Get memory usage
+        allocated_before, reserved_before = get_memory_usage()
+
         # Gradient zeroing and autocasting
         opt.zero_grad()
         with autocast():
@@ -290,6 +309,9 @@ def go(
         # Backward pass with gradient scaling
         scaler.scale(loss).backward()
         scaler.unscale_(opt)
+
+        # Get memory usage
+        allocated_after, reserved_after = get_memory_usage()
 
         # Calculate gradient norms
         grad_norm = torch.norm(torch.stack([torch.norm(p.grad.detach(), 2) for p in model.parameters() if p.grad is not None]), 2)
@@ -322,10 +344,10 @@ def go(
         # Log the data to wandb
         wandb.log(log_data, step=instances_seen)
 
-        # # Print the current depth
-        # print(f"Current depth: {current_depth}")
-        # print(f"Memory Allocated Before: {allocated_before / (1024 ** 3):.2f} GB, After: {allocated_after / (1024 ** 3):.2f} GB")
-        # print(f"Memory Reserved Before: {reserved_before / (1024 ** 3):.2f} GB, After: {reserved_after / (1024 ** 3):.2f} GB")
+        # Print the current depth
+        print(f"Current depth: {current_depth}")
+        print(f"Memory Allocated Before: {allocated_before / (1024 ** 3):.2f} GB, After: {allocated_after / (1024 ** 3):.2f} GB")
+        print(f"Memory Reserved Before: {reserved_before / (1024 ** 3):.2f} GB, After: {reserved_after / (1024 ** 3):.2f} GB")
 
         # Validate every `test_every` steps. First we compute the
         # compression on the validation data (or a subset),
