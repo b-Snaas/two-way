@@ -179,17 +179,17 @@ def go(
     quarter_depth = depth // 4
 
     batch_size_by_depth = {
-        quarter_depth: 255,
-        2 * quarter_depth: 130,
-        3 * quarter_depth: 85,
-        depth: 65
+        quarter_depth: 450,
+        2 * quarter_depth: 245,
+        3 * quarter_depth: 175,
+        depth: 125
     }
 
     lr_by_depth = {
-        quarter_depth: 5e-4,
-        2 * quarter_depth: 1e-4,
-        3 * quarter_depth: 5e-5,
-        depth: 3e-5
+        quarter_depth: 1.5e-3,
+        2 * quarter_depth: 5e-4,
+        3 * quarter_depth: 1e-4,
+        depth: 5e-5
     }
 
     wandb.init(
@@ -266,7 +266,7 @@ def go(
             source, target = source.cuda(), target.cuda()
 
         # memory usage
-        # allocated_before, reserved_before = get_memory_usage()
+        allocated_before, reserved_before = get_memory_usage()
 
         # Gradient zeroing and autocasting
         opt.zero_grad()
@@ -295,7 +295,7 @@ def go(
         scaler.unscale_(opt)
 
         # Memory usage
-        # allocated_after, reserved_after = get_memory_usage()
+        allocated_after, reserved_after = get_memory_usage()
 
         # Calculate gradient norms
         grad_norm = torch.norm(torch.stack([torch.norm(p.grad.detach(), 2) for p in model.parameters() if p.grad is not None]), 2)
@@ -328,10 +328,10 @@ def go(
         # Log the data to wandb
         wandb.log(log_data, step=instances_seen)
 
-        # # Print the current depth
-        # print(f"Current depth: {current_depth}")
-        # print(f"Memory Allocated Before: {allocated_before / (1024 ** 3):.2f} GB, After: {allocated_after / (1024 ** 3):.2f} GB")
-        # print(f"Memory Reserved Before: {reserved_before / (1024 ** 3):.2f} GB, After: {reserved_after / (1024 ** 3):.2f} GB")
+        # Print the current depth
+        print(f"Current depth: {current_depth}")
+        print(f"Memory Allocated Before: {allocated_before / (1024 ** 3):.2f} GB, After: {allocated_after / (1024 ** 3):.2f} GB")
+        print(f"Memory Reserved Before: {reserved_before / (1024 ** 3):.2f} GB, After: {reserved_after / (1024 ** 3):.2f} GB")
 
         # Validate every `test_every` steps. First we compute the
         # compression on the validation data (or a subset),
