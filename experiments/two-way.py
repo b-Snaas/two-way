@@ -195,10 +195,10 @@ def go(
     quarter_depth = depth // 4
 
     batch_size_by_depth = {
-        quarter_depth: 240,
-        2 * quarter_depth: 125,
-        3 * quarter_depth: 80,
-        depth: 60
+        quarter_depth: 260,
+        2 * quarter_depth: 130,
+        3 * quarter_depth: 85,
+        depth: 65
     }
 
     lr_by_depth = {
