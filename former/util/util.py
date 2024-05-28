@@ -567,7 +567,7 @@ def dynamic_distill_loss(target, y_outputs, gamma, ema_values):
             ground_truth_loss = F.cross_entropy(transposed_y, target, reduction="mean")
 
             # Add distillation and ground truth losses to the student loss
-            student_loss += (distill_loss * 0.5) + (ground_truth_loss * 0.5)
+            student_loss += (distill_loss * 0.5) + (ground_truth_loss * 0.0)
 
             # Append the computed ground truth loss
             losses.append(ground_truth_loss)
