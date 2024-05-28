@@ -304,6 +304,8 @@ def go(
                 teacher_loss = loss
                 ground_truth_losses = [loss]
 
+        output_index = ema_values.index(min(ema_values))
+
         for idx, ema in enumerate(ema_values):
             if idx < len(ground_truth_losses):
                 ema.update(ground_truth_losses[idx])
@@ -332,7 +334,7 @@ def go(
             "learning-rate": opt.param_groups[0]['lr'],
             "batches_seen": batches_seen,
             "current_depth": current_depth,
-            "output-layer-loss": ground_truth_losses[-1].item() * util.LOG2E,
+            "output-layer-loss": ground_truth_losses[output_index].item() * util.LOG2E,
             "gradient-norm": grad_norm.item()
         }
 
