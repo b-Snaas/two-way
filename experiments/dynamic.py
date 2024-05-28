@@ -304,7 +304,7 @@ def go(
                 teacher_loss = loss
                 ground_truth_losses = [loss]
 
-        output_index = ema_values.index(min(ema_values))
+        output_index = current_ema_values.index(min(current_ema_values))
 
         for idx, ema in enumerate(ema_values):
             if idx < len(ground_truth_losses):
