@@ -338,13 +338,17 @@ def compute_compression(model, data, context, batch_size, depth, ema_values=None
             inputs = all[:, :-1]  # input
             target = all[:, -1]  # target values
 
-            outputs = model(inputs, current_depth=depth)
+            if ema_values:
+                outputs = model(inputs, current_depth=depth)
 
-            # Get the output of the best layer
-            best_output = outputs[best_layer_idx]
+                # Get the output of the best layer
+                output = outputs[best_layer_idx]
+
+            else:
+                output = model(inputs)
 
             # Apply log softmax to the best layer's output to get log probabilities
-            log_probs = F.log_softmax(best_output, dim=-1)
+            log_probs = F.log_softmax(output, dim=-1)
 
             # Compute log2 probabilities for the best layer
             log2probs = log_probs[torch.arange(b, device=log_probs.device), -1, target] * util.LOG2E
@@ -513,6 +517,8 @@ def distill_loss(output, target, y_outputs, gamma):
 
 
 
+import torch.nn.functional as F
+
 def dynamic_distill_loss(target, y_outputs, gamma, ema_values):
     """
     Compute the primary loss with mandatory distillation loss and target loss for multiple layers,
@@ -528,7 +534,7 @@ def dynamic_distill_loss(target, y_outputs, gamma, ema_values):
     - The computed total loss.
     """
 
-    # # Find the index of the output with the lowest EMA value to use as the teacher
+    # Find the index of the output with the lowest EMA value to use as the teacher
     teacher_index = ema_values.index(min(ema_values))
 
     # Use the output with the lowest EMA as the teacher
@@ -551,11 +557,14 @@ def dynamic_distill_loss(target, y_outputs, gamma, ema_values):
             # Append the previously computed teacher ground truth loss
             losses.append(teacher_loss)
         else:
+            # transpose the output to match the target shape
+            transposed_y = y.transpose(2, 1)
+
             # Compute distillation loss for the current intermediate output
-            distill_loss = F.cross_entropy(y.transpose(2, 1), teacher_probs, reduction="mean")
+            distill_loss = F.cross_entropy(transposed_y, teacher_probs, reduction="mean")
 
             # Compute direct ground truth loss for the current intermediate output
-            ground_truth_loss = F.cross_entropy(y.transpose(2, 1), target, reduction="mean")
+            ground_truth_loss = F.cross_entropy(transposed_y, target, reduction="mean")
 
             # Add distillation and ground truth losses to the student loss
             student_loss += (distill_loss * 0.5) + (ground_truth_loss * 0.5)
@@ -563,8 +572,8 @@ def dynamic_distill_loss(target, y_outputs, gamma, ema_values):
             # Append the computed ground truth loss
             losses.append(ground_truth_loss)
 
-    # Scale the combined student losses with gamma and add to teacher loss
-    loss = teacher_loss + gamma * student_loss
+    # Scale the combined student losses with gamma and add to deepest loss
+    loss = losses[-1] + gamma * student_loss
 
     return loss, teacher_loss, losses
 

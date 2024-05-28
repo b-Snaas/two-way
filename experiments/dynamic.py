@@ -178,19 +178,37 @@ def go(
 
     quarter_depth = depth // 4
 
-    batch_size_by_depth = {
-        quarter_depth: 230,
-        2 * quarter_depth: 130,
-        3 * quarter_depth: 85,
-        depth: 65
-    }
+    if depth == 12:
 
-    lr_by_depth = {
-        quarter_depth: 5e-4,
-        2 * quarter_depth: 3e-4,
-        3 * quarter_depth: 1e-4,
-        depth: 5e-5
-    }
+        batch_size_by_depth = {
+            quarter_depth: 465,
+            2 * quarter_depth: 255,
+            3 * quarter_depth: 175,
+            depth: 130
+        }
+
+        lr_by_depth = {
+            quarter_depth: 1e-3,
+            2 * quarter_depth: 5e-4,
+            3 * quarter_depth: 3e-4,
+            depth: 1e-4
+        }
+
+    elif depth == 24:
+
+        batch_size_by_depth = {
+            quarter_depth: 230,
+            2 * quarter_depth: 130,
+            3 * quarter_depth: 85,
+            depth: 65
+        }
+
+        lr_by_depth = {
+            quarter_depth: 5e-4,
+            2 * quarter_depth: 3e-4,
+            3 * quarter_depth: 1e-4,
+            depth: 5e-5
+        }
 
     wandb.init(
         project="distill-transformer",
