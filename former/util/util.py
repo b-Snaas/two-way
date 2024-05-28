@@ -516,9 +516,6 @@ def distill_loss(output, target, y_outputs, gamma):
     return loss, teacher_loss, student_losses
 
 
-
-import torch.nn.functional as F
-
 def dynamic_distill_loss(target, y_outputs, gamma, ema_values):
     """
     Compute the primary loss with mandatory distillation loss and target loss for multiple layers,
