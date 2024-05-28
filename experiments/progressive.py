@@ -16,7 +16,6 @@ import warnings
 # power of two.
 NUM_TOKENS = 256
 
-
 def sample(lnprobs, temperature=1.0):
     """
     Sample an element from a categorical distribution
@@ -149,8 +148,79 @@ def get_memory_usage():
     reserved = torch.cuda.memory_reserved()
     return allocated, reserved
 
+def update_optimizer_lr(optimizer, current_depth, batches_seen, batch_size, lr_by_depth, warmup_steps):
+    lr = lr_by_depth[current_depth]
+    if batches_seen < warmup_steps:
+        lr *= batches_seen / warmup_steps
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
+
+def prepare_batch(data_train, context, batch_size):
+    source, target = sample_batch(data_train, length=context, batch_size=batch_size)
+    if torch.cuda.is_available():
+        source, target = source.cuda(), target.cuda()
+    return source, target
+
+def calculate_loss(model, source, target, current_depth, gamma, ema_values):
+    outputs = model(source, current_depth=current_depth)
+    valid_outputs = [output for output in outputs if output is not None]
+    current_ema_values = [ema.value for ema in ema_values[:len(valid_outputs)]]
+
+    if len(valid_outputs) > 1:
+        loss, teacher_loss, ground_truth_losses = dynamic_distill_loss(
+            target, valid_outputs, gamma=gamma, ema_values=current_ema_values
+        )
+    else:
+        loss = F.cross_entropy(valid_outputs[0].transpose(2, 1), target, reduction="mean")
+        teacher_loss = loss
+        ground_truth_losses = [loss]
+    
+    return loss, teacher_loss, ground_truth_losses
+
+def update_ema_values(ema_values, ground_truth_losses):
+    for idx, ema in enumerate(ema_values):
+        if idx < len(ground_truth_losses):
+            ema.update(ground_truth_losses[idx])
+
+def log_training_data(wandb, opt, batches_seen, instances_seen, current_depth, ground_truth_losses, grad_norm, ema_values):
+    log_data = {
+        "learning-rate": opt.param_groups[0]['lr'],
+        "batches_seen": batches_seen,
+        "current_depth": current_depth,
+        "output-layer-loss": ground_truth_losses[-1].item() * util.LOG2E,
+        "gradient-norm": grad_norm.item()
+    }
+
+    for idx, loss in enumerate(ground_truth_losses):
+        log_data[f"train-loss-{idx}"] = loss.item() * util.LOG2E
+
+    for idx, ema in enumerate(ema_values):
+        log_data[f"ema-{idx}"] = ema.value if isinstance(ema.value, (int, float)) else ema.value.item()
+
+    wandb.log(log_data, step=instances_seen)
+
+def evaluate_model(wandb, model, data_test, context, test_subset, test_batchsize, batches_seen, final_batches, test_every, depth, ema_values, instances_seen):
+    if batches_seen % test_every == 0:
+        with torch.no_grad():
+            seedfr = random.randint(0, data_test.size(0) - context)
+            seed = data_test[seedfr: seedfr + context].to(torch.long)
+
+            if torch.cuda.is_available():
+                seed = seed.cuda()
+
+            upto = data_test.size(0) if batches_seen == final_batches else test_subset
+            data_sub = data_test[:upto]
+            bits_per_byte = util.compute_compression(
+                model, data_sub, context=context, batch_size=test_batchsize, depth=depth, ema_values=ema_values
+            )
+
+            print(f"epoch{batches_seen}: {bits_per_byte:.4} bits per byte")
+            wandb.log({"transformer/validation-bits-per-byte": bits_per_byte}, step=instances_seen)
+
 def go(
-    num_batches=1_000_000,
+    progressive_batches=10000,
+    final_batches=100000,
+    test_every=1500,
     data=None,
     tb_dir="./runs",
     final=False,
@@ -160,7 +230,6 @@ def go(
     depth=12,
     gamma=0.5,
     seed=1,
-    test_every=1500,
     test_subset=100000,
     nsamples=64,
     test_batchsize=64,
@@ -179,15 +248,15 @@ def go(
     quarter_depth = depth // 4
 
     batch_size_by_depth = {
-        quarter_depth: 465,
-        2 * quarter_depth: 255,
-        3 * quarter_depth: 175,
-        depth: 130
+        quarter_depth: 230,
+        2 * quarter_depth: 130,
+        3 * quarter_depth: 85,
+        depth: 65
     }
 
     lr_by_depth = {
-        quarter_depth: 1e-3,
-        2 * quarter_depth: 5e-4,
+        quarter_depth: 5e-4,
+        2 * quarter_depth: 3e-4,
         3 * quarter_depth: 1e-4,
         depth: 5e-5
     }
@@ -207,7 +276,7 @@ def go(
         },
     )
 
-    # load the data (validation unless final is true, then test)
+
     data = here("data/enwik8.gz") if data is None else data
 
     data_train, data_val, data_test = enwik8(data)
@@ -217,7 +286,6 @@ def go(
         else (data_train, data_val)
     )
 
-    # create the model
     model = TwowayGen(
         emb=embedding_size,
         heads=num_heads,
@@ -229,12 +297,9 @@ def go(
     if torch.cuda.is_available():
         model.cuda()
 
-    # Training loop
     instances_seen = 0
     batches_seen = 0
     scaler = GradScaler()
-
-    # Initializing optimizer with the smallest learning rate
     opt = torch.optim.Adam(lr=min(lr_by_depth.values()), params=model.parameters())
 
     ema1 = ExponentialMovingAverage(decay=0.50)
@@ -248,124 +313,119 @@ def go(
 
     ema_values = [ema1, ema2, ema3, ema4]
 
-    for i in tqdm.trange(num_batches):
+    depths_sequence = [quarter_depth, 2 * quarter_depth, 3 * quarter_depth, depth]
+
+    for depth_idx, current_depth in enumerate(depths_sequence):
+        print(f"Training with current depth: {current_depth}")
+
+        for _ in tqdm.trange(progressive_batches):
+            batches_seen += 1
+            batch_size = batch_size_by_depth[current_depth]
+
+            update_optimizer_lr(opt, current_depth, batches_seen, batch_size, lr_by_depth, warmup_steps)
+            source, target = prepare_batch(data_train, context, batch_size)
+
+            opt.zero_grad()
+            with autocast():
+                loss, teacher_loss, ground_truth_losses = calculate_loss(model, source, target, current_depth, gamma, ema_values)
+
+            update_ema_values(ema_values, ground_truth_losses)
+
+            scaler.scale(loss).backward()
+            scaler.unscale_(opt)
+            grad_norm = torch.norm(torch.stack([torch.norm(p.grad.detach(), 2) for p in model.parameters() if p.grad is not None]), 2)
+            if gradient_clipping > 0.0:
+                nn.utils.clip_grad_norm_(model.parameters(), gradient_clipping)
+
+            scaler.step(opt)
+            scaler.update()
+
+            log_training_data(wandb, opt, batches_seen, instances_seen, current_depth, ground_truth_losses, grad_norm, ema_values)
+            evaluate_model(wandb, model, data_test, context, test_subset, test_batchsize, batches_seen, final_batches, test_every, depth, ema_values, instances_seen)
+
+        if depth_idx < len(depths_sequence) - 1:
+            next_depth = depths_sequence[depth_idx + 1]
+            print(f"Distilling to next depth: {next_depth}")
+
+            while True:
+                batches_seen += 1
+                batch_size = batch_size_by_depth[next_depth]
+
+                update_optimizer_lr(opt, next_depth, batches_seen, batch_size, lr_by_depth, warmup_steps)
+                source, target = prepare_batch(data_train, context, batch_size)
+
+                opt.zero_grad()
+                with autocast():
+                    loss, teacher_loss, ground_truth_losses = calculate_loss(model, source, target, next_depth, gamma, ema_values)
+
+                update_ema_values(ema_values, ground_truth_losses)
+
+                scaler.scale(loss).backward()
+                scaler.unscale_(opt)
+                grad_norm = torch.norm(torch.stack([torch.norm(p.grad.detach(), 2) for p in model.parameters() if p.grad is not None]), 2)
+                if gradient_clipping > 0.0:
+                    nn.utils.clip_grad_norm_(model.parameters(), gradient_clipping)
+
+                scaler.step(opt)
+                scaler.update()
+
+                log_training_data(wandb, opt, batches_seen, instances_seen, next_depth, ground_truth_losses, grad_norm, ema_values)
+                evaluate_model(wandb, model, data_test, context, test_subset, test_batchsize, batches_seen, final_batches, test_every, depth, ema_values, instances_seen)
+
+                if ema_values[next_depth // quarter_depth - 1].value < ema_values[current_depth // quarter_depth - 1].value:
+                    break
+
+            print(f"Training with next depth without distillation: {next_depth}")
+            for _ in tqdm.trange(progressive_batches):
+                batches_seen += 1
+                batch_size = batch_size_by_depth[next_depth]
+
+                update_optimizer_lr(opt, next_depth, batches_seen, batch_size, lr_by_depth, warmup_steps)
+                source, target = prepare_batch(data_train, context, batch_size)
+
+                opt.zero_grad()
+                with autocast():
+                    loss, teacher_loss, ground_truth_losses = calculate_loss(model, source, target, next_depth, gamma, ema_values)
+
+                update_ema_values(ema_values, ground_truth_losses)
+
+                scaler.scale(loss).backward()
+                scaler.unscale_(opt)
+                grad_norm = torch.norm(torch.stack([torch.norm(p.grad.detach(), 2) for p in model.parameters() if p.grad is not None]), 2)
+                if gradient_clipping > 0.0:
+                    nn.utils.clip_grad_norm_(model.parameters(), gradient_clipping)
+
+                scaler.step(opt)
+                scaler.update()
+
+                log_training_data(wandb, opt, batches_seen, instances_seen, next_depth, ground_truth_losses, grad_norm, ema_values)
+                evaluate_model(wandb, model, data_test, context, test_subset, test_batchsize, batches_seen, final_batches, test_every, depth, ema_values, instances_seen)
+
+    print(f"Final training for final depth: {depth}")
+    for _ in tqdm.trange(final_batches):
         batches_seen += 1
-        # Randomly choose the current depth for this batch from predefined options
-        current_depth = random.choice([quarter_depth, 2 * quarter_depth, 3 * quarter_depth, depth])
-        batch_size = batch_size_by_depth[current_depth]
+        batch_size = batch_size_by_depth[depth]
 
-        # Update optimizer's learning rate according to the depth and warmup schedule
-        update_lr(opt, current_depth, batches_seen, batch_size, lr_by_depth, warmup_steps)
+        update_optimizer_lr(opt, depth, batches_seen, batch_size, lr_by_depth, warmup_steps)
+        source, target = prepare_batch(data_train, context, batch_size)
 
-        # Prepare the batch
-        source, target = sample_batch(data_train, length=context, batch_size=batch_size)
-        instances_seen += source.size(0)
-
-        # Move data to GPU if available
-        if torch.cuda.is_available():
-            source, target = source.cuda(), target.cuda()
-
-        # # memory usage
-        # allocated_before, reserved_before = get_memory_usage()
-
-        # Gradient zeroing and autocasting
         opt.zero_grad()
         with autocast():
-            # Get all layer outputs up to the current maximum depth
-            outputs = model(source, current_depth=current_depth)
+            loss, teacher_loss, ground_truth_losses = calculate_loss(model, source, target, depth, gamma, ema_values)
 
-            # Exclude None values from outputs and prepare for distillation
-            valid_outputs = [output for output in outputs if output is not None]
+        update_ema_values(ema_values, ground_truth_losses)
 
-            current_ema_values = [ema.value for ema in ema_values[:len(valid_outputs)]]
-
-            if len(valid_outputs) > 1:
-                loss, teacher_loss, ground_truth_losses = dynamic_distill_loss(target, valid_outputs, gamma=gamma, ema_values=current_ema_values)
-            else:
-                loss = F.cross_entropy(valid_outputs[0].transpose(2, 1), target, reduction="mean")
-                teacher_loss = loss
-                ground_truth_losses = [loss]
-
-        for idx, ema in enumerate(ema_values):
-            if idx < len(ground_truth_losses):
-                ema.update(ground_truth_losses[idx])
-
-        # Backward pass with gradient scaling
         scaler.scale(loss).backward()
         scaler.unscale_(opt)
-
-        # # Memory usage
-        # allocated_after, reserved_after = get_memory_usage()
-
-        # Calculate gradient norms
         grad_norm = torch.norm(torch.stack([torch.norm(p.grad.detach(), 2) for p in model.parameters() if p.grad is not None]), 2)
-
-        # Gradient clipping
         if gradient_clipping > 0.0:
             nn.utils.clip_grad_norm_(model.parameters(), gradient_clipping)
 
-        # Optimizer and scaler steps
         scaler.step(opt)
         scaler.update()
 
-        # Update EMAs and log data
-        ema_values = [ema1, ema2, ema3, ema4]
-        log_data = {
-            "learning-rate": opt.param_groups[0]['lr'],
-            "batches_seen": batches_seen,
-            "current_depth": current_depth,
-            "output-layer-loss": ground_truth_losses[-1].item() * util.LOG2E,
-            "gradient-norm": grad_norm.item()
-        }
-
-        for idx, loss in enumerate(ground_truth_losses):
-            log_data[f"train-loss-{idx}"] = loss.item() * util.LOG2E
-
-        for idx, ema in enumerate(ema_values):
-            # Directly use ema.value if it's an int or float
-            log_data[f"ema-{idx}"] = ema.value if isinstance(ema.value, (int, float)) else ema.value.item()
-
-        # Log the data to wandb
-        wandb.log(log_data, step=instances_seen)
-
-        # # Print the current depth
-        # print(f"Current depth: {current_depth}")
-        # print(f"Memory Allocated Before: {allocated_before / (1024 ** 3):.2f} GB, After: {allocated_after / (1024 ** 3):.2f} GB")
-        # print(f"Memory Reserved Before: {reserved_before / (1024 ** 3):.2f} GB, After: {reserved_after / (1024 ** 3):.2f} GB")
-
-        # Validate every `test_every` steps. First we compute the
-        # compression on the validation data (or a subset),
-        # then we generate some random text to monitor progress.
-        if i != 0 and (i % test_every == 0 or i == num_batches - 1):
-            with torch.no_grad():
-
-                ## Sample and print a random sequence
-
-                # Slice a random seed from the test data, and sample a continuation from the model.
-                seedfr = random.randint(0, data_test.size(0) - context)
-                seed = data_test[seedfr : seedfr + context].to(torch.long)
-
-                if torch.cuda.is_available():
-                    seed = seed.cuda()
-
-                ## Compute validation bits per byte
-
-                upto = data_test.size(0) if i == num_batches - 1 else test_subset
-                data_sub = data_test[:upto]
-                bits_per_byte = util.compute_compression(
-                    model, data_sub, context=context, batch_size=test_batchsize, depth=depth, ema_values=ema_values
-                )
-                # -- Since we're not computing gradients, we can increase the batch size a little from what we used in
-                #    training.
-
-                print(f"epoch{i}: {bits_per_byte:.4} bits per byte")
-                wandb.log(
-                    {"transformer/validation-bits-per-byte": bits_per_byte},
-                    step=instances_seen,
-                )
-
-                # -- 0.9 bit per byte is around the state of the art.
-
+        log_training_data(wandb, opt, batches_seen, instances_seen, depth, ground_truth_losses, grad_norm, ema_values)
+        evaluate_model(wandb, model, data_test, context, test_subset, test_batchsize, batches_seen, final_batches, test_every, depth, ema_values, instances_seen)
 
 if __name__ == "__main__":
     fire.Fire(go)
