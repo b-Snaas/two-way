@@ -372,8 +372,18 @@ def go(
                 log_training_data(wandb, opt, batches_seen, instances_seen, next_depth, ground_truth_losses, grad_norm, ema_values)
                 evaluate_model(wandb, model, data_test, context, test_subset, test_batchsize, batches_seen, final_batches, test_every, depth, ema_values, instances_seen)
 
-                if ema_values[next_depth // quarter_depth - 1].value < ema_values[current_depth // quarter_depth - 1].value:
+                current_ema = ema_values[next_depth // quarter_depth - 1].value
+                previous_ema = ema_values[current_depth // quarter_depth - 1].value
+
+                # Log the EMA values to debug the loop condition
+                print(f"Checking loop exit condition: current EMA: {current_ema}, previous EMA: {previous_ema}")
+
+                if current_ema < previous_ema:
+                    print("Exiting depth transition loop.")
                     break
+                else:
+                    print("Continuing depth transition loop.")
+
 
             print(f"Training with next depth without distillation: {next_depth}")
             for _ in tqdm.trange(progressive_batches):
