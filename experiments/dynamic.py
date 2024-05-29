@@ -143,6 +143,34 @@ def update_lr(opt, current_depth, step, batch_size, lr_by_depth, warmup_steps):
         warmup_factor = min(step / (warmup_steps / batch_size), 1.0)
         param_group['lr'] = base_lr * warmup_factor
 
+def get_layer_depth(batch_num, num_batches, depth):
+    quarter_depth = depth // 4
+    phases = [0.25, 0.5, 0.75, 1.0]
+    weights = [
+        [0.6, 0.2, 0.1, 0.1],
+        [0.4, 0.3, 0.2, 0.1],
+        [0.1, 0.2, 0.3, 0.4],
+        [0.0, 0.1, 0.2, 0.7]  
+    ]
+    phase_index = next(i for i, phase in enumerate(phases) if batch_num / num_batches < phase)
+    current_weights = weights[phase_index]
+    chosen_depth = np.random.choice(
+        [quarter_depth, 2 * quarter_depth, 3 * quarter_depth, depth],
+        p=current_weights
+    )
+    return chosen_depth
+
+def adjust_gamma(current_batch, total_batches, max_gamma):
+    midpoint = total_batches // 2
+
+    if current_batch <= midpoint:
+        gamma = (current_batch / midpoint) * max_gamma
+    else:
+        gamma = ((total_batches - current_batch) / midpoint) * max_gamma
+
+    return gamma
+
+
 # Define a function to get memory usage
 def get_memory_usage():
     allocated = torch.cuda.memory_allocated()
@@ -159,6 +187,7 @@ def go(
     context=128,
     depth=12,
     gamma=0.5,
+    decay=0.5,
     seed=1,
     test_every=1500,
     test_subset=100000,
@@ -218,6 +247,7 @@ def go(
             "context": context,
             "depth": depth,
             "gamma": gamma,
+            "decay": decay,
             "seed": seed,
             "gradient_clipping": gradient_clipping,
             "lr_by_depth": lr_by_depth,
@@ -255,23 +285,24 @@ def go(
     # Initializing optimizer with the smallest learning rate
     opt = torch.optim.Adam(lr=min(lr_by_depth.values()), params=model.parameters())
 
-    ema1 = ExponentialMovingAverage(decay=0.50)
+    ema1 = ExponentialMovingAverage(decay=decay)
     ema1.update(1000)
-    ema2 = ExponentialMovingAverage(decay=0.50)
+    ema2 = ExponentialMovingAverage(decay=decay)
     ema2.update(1000)
-    ema3 = ExponentialMovingAverage(decay=0.50)
+    ema3 = ExponentialMovingAverage(decay=decay)
     ema3.update(1000)
-    ema4 = ExponentialMovingAverage(decay=0.50)
+    ema4 = ExponentialMovingAverage(decay=decay)
     ema4.update(1000)
 
     ema_values = [ema1, ema2, ema3, ema4]
 
     for i in tqdm.trange(num_batches):
         batches_seen += 1
-        # Randomly choose the current depth for this batch from predefined options
-        current_depth = random.choice([quarter_depth, 2 * quarter_depth, 3 * quarter_depth, depth])
+        current_depth = get_layer_depth(batches_seen, num_batches, depth)
         batch_size = batch_size_by_depth[current_depth]
 
+        current_gamma = adjust_gamma(batches_seen, num_batches, gamma)
+ 
         # Update optimizer's learning rate according to the depth and warmup schedule
         update_lr(opt, current_depth, batches_seen, batch_size, lr_by_depth, warmup_steps)
 
@@ -298,7 +329,7 @@ def go(
             current_ema_values = [ema.value for ema in ema_values[:len(valid_outputs)]]
 
             if len(valid_outputs) > 1:
-                loss, teacher_loss, ground_truth_losses = dynamic_distill_loss(target, valid_outputs, gamma=gamma, ema_values=current_ema_values)
+                loss, teacher_loss, ground_truth_losses = dynamic_distill_loss(target, valid_outputs, gamma=current_gamma, ema_values=current_ema_values)
             else:
                 loss = F.cross_entropy(valid_outputs[0].transpose(2, 1), target, reduction="mean")
                 teacher_loss = loss
