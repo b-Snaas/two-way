@@ -152,7 +152,8 @@ def get_layer_depth(batch_num, num_batches, depth):
         [0.1, 0.2, 0.3, 0.4],
         [0.0, 0.1, 0.2, 0.7]  
     ]
-    phase_index = next(i for i, phase in enumerate(phases) if batch_num / num_batches < phase)
+    # Safeguard against the ratio exactly equalling 1.0
+    phase_index = next((i for i, phase in enumerate(phases) if batch_num / num_batches <= phase), len(phases) - 1)
     current_weights = weights[phase_index]
     chosen_depth = np.random.choice(
         [quarter_depth, 2 * quarter_depth, 3 * quarter_depth, depth],
