@@ -1,5 +1,5 @@
 from former import util, TwowayGen
-from former.util import here, dynamic_distill_loss
+from former.util import here, progressive_distill_loss
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -272,25 +272,17 @@ def go(
             source, target = source.cuda(), target.cuda()
 
         opt.zero_grad()
+
         with autocast():
             outputs = model(source, current_depth=current_depth)
             valid_outputs = [output for output in outputs if output is not None]
-            current_ema_values = [ema.value for ema in ema_values[:len(valid_outputs)]]
 
-            if len(valid_outputs) > 1:
-                loss, teacher_loss, ground_truth_losses = dynamic_distill_loss(
-                    target, valid_outputs, gamma=gamma, ema_values=current_ema_values)
-            else:
-                loss = F.cross_entropy(valid_outputs[0].transpose(2, 1), target, reduction="mean")
-                teacher_loss = loss
-                ground_truth_losses = [loss]
+            loss, ground_truth_losses = progressive_distill_loss(
+                target, valid_outputs, train_stage, gamma
+        )
 
-        output_index = current_ema_values.index(min(current_ema_values))
-
-        for idx, ema in enumerate(ema_values):
-            if idx < len(ground_truth_losses):
-                ema.update(ground_truth_losses[idx])
-
+        update_ema_values(ema_values, ground_truth_losses, depth_index)
+        
         scaler.scale(loss).backward()
         scaler.unscale_(opt)
 
@@ -305,7 +297,7 @@ def go(
             "learning-rate": opt.param_groups[0]['lr'],
             "batches_seen": batches_seen,
             "current_depth": current_depth,
-            "output-layer-loss": ground_truth_losses[output_index].item() * util.LOG2E,
+            "output-layer-loss": ground_truth_losses[-1].item() * util.LOG2E,
             "gradient-norm": grad_norm.item()
         }
 

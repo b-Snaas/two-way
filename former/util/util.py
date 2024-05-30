@@ -575,6 +575,47 @@ def dynamic_distill_loss(target, y_outputs, gamma, ema_values):
     return loss, teacher_loss, losses
 
 
+def progressive_distill_loss(target, outputs, train_stage, gamma):
+    """
+    Compute the loss based on the current training stage.
+    
+    Parameters:
+    - target: The ground truth labels.
+    - outputs: A list of the model's intermediate output logits at specified layers.
+    - train_stage: The current training stage (initial, train, distill).
+    - gamma: Weight factor for the distillation loss.
+    
+    Returns:
+    - The computed loss for backpropagation.
+    - A list of ground truth losses for logging.
+    """
+    losses = []
+    student_loss = 0
+
+    for idx, output in enumerate(outputs):
+        if output is None:
+            continue
+        
+        transposed_output = output.transpose(2, 1)
+        ground_truth_loss = F.cross_entropy(transposed_output, target, reduction="mean")
+        losses.append(ground_truth_loss)
+
+        if train_stage == "distill" and idx == len(outputs) - 1 and len(outputs) > 1:
+            teacher_output = outputs[idx - 1]
+            teacher_out = teacher_output.transpose(2, 1).detach()
+            teacher_probs = F.softmax(teacher_out, dim=1)
+            distill_loss = F.cross_entropy(transposed_output, teacher_probs, reduction="mean")
+            combined_loss = (1 - gamma) * ground_truth_loss + gamma * distill_loss
+            student_loss = combined_loss
+
+    if train_stage == "distill" and len(outputs) > 1:
+        loss = student_loss
+    else:
+        loss = losses[-1]
+
+    return loss, losses
+
+
 def ema_update(old, new, beta=0.50):
     """ Update the exponential moving average (EMA) with a new data point. """
     return beta * old + (1 - beta) * new
