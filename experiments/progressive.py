@@ -192,7 +192,7 @@ def log_training_data(wandb, opt, batches_seen, instances_seen, current_depth, g
     for idx, ema in enumerate(ema_values):
         log_data[f"ema-{idx}"] = ema.value if isinstance(ema.value, (int, float)) else ema.value.item()
 
-    wandb.log(log_data, step=instances_seen)
+    wandb.log(log_data, step=instances_seen, commit=True)
 
 def evaluate_model(wandb, model, data_test, context, test_subset, test_batchsize, batches_seen, final_batches, test_every, depth, ema_values, instances_seen):
     if batches_seen % test_every == 0:
@@ -210,7 +210,7 @@ def evaluate_model(wandb, model, data_test, context, test_subset, test_batchsize
             )
 
             print(f"epoch{batches_seen}: {bits_per_byte:.4} bits per byte")
-            wandb.log({"transformer/validation-bits-per-byte": bits_per_byte}, step=instances_seen)
+            wandb.log({"transformer/validation-bits-per-byte": bits_per_byte}, step=instances_seen, commit=True)
 
 def go(
     progressive_batches=10000,
