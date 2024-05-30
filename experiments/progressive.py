@@ -8,6 +8,7 @@ from torch.cuda.amp import autocast, GradScaler
 import torch.autograd.profiler as profiler
 import numpy as np
 import random, tqdm, gzip, fire, wandb
+import logging
 import gc
 
 import warnings
@@ -184,12 +185,6 @@ def update_ema_values(ema_values, ground_truth_losses, current_depth_index):
 
 def log_training_data(wandb, opt, batches_seen, instances_seen, current_depth, ground_truth_losses, grad_norm, ema_values):
     # Log the learning rate, the current depth, the loss, and the gradient norm
-    print(f"Learning rate: {opt.param_groups[0]['lr']}")
-    print(f"Batches seen: {batches_seen}")
-    print(f"Current depth: {current_depth}")
-    print(f"Output layer loss: {ground_truth_losses[-1].item() * util.LOG2E}")
-    print(f"Gradient norm: {grad_norm.item()}")
-
     log_data = {
         "learning-rate": opt.param_groups[0]['lr'],
         "batches_seen": batches_seen,
@@ -200,9 +195,6 @@ def log_training_data(wandb, opt, batches_seen, instances_seen, current_depth, g
 
     for idx, ema in enumerate(ema_values):
         log_data[f"ema-{idx}"] = ema.value if isinstance(ema.value, (int, float)) else ema.value.item()
-
-    print(log_data)
-    print("We are logging")
 
     wandb.log(log_data, step=instances_seen)
 
@@ -270,6 +262,17 @@ def go(
         depth: 5e-5
     }
 
+    logger = logging.getLogger("wandb")
+    logger.setLevel(logging.DEBUG)
+
+    # Optional: Configure a stream handler for console output
+    stream_handler = logging.StreamHandler()
+    stream_handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    stream_handler.setFormatter(formatter)
+    logger.addHandler(stream_handler)
+
+
     wandb.init(
         project="distill-transformer",
         config={
@@ -286,7 +289,6 @@ def go(
             "batch_size_by_depth": batch_size_by_depth
         },
     )
-
 
     data = here("data/enwik8.gz") if data is None else data
 
@@ -352,23 +354,7 @@ def go(
             scaler.step(opt)
             scaler.update()
 
-            log_data = {
-                "learning-rate": opt.param_groups[0]['lr'],
-                "batches_seen": batches_seen,
-                "current_depth": current_depth,
-                "output-layer-loss": ground_truth_losses[-1].item() * util.LOG2E,
-                "gradient-norm": grad_norm.item()
-            }
-
-            for idx, loss in enumerate(ground_truth_losses):
-                log_data[f"train-loss-{idx}"] = loss.item() * util.LOG2E
-
-            for idx, ema in enumerate(ema_values):
-                # Directly use ema.value if it's an int or float
-                log_data[f"ema-{idx}"] = ema.value if isinstance(ema.value, (int, float)) else ema.value.item()
-
-            # Log the data to wandb
-            wandb.log(log_data, step=instances_seen)
+            log_training_data(wandb, opt, batches_seen, instances_seen, current_depth, ground_truth_losses, grad_norm, ema_values)
 
             evaluate_model(wandb, model, data_test, context, test_subset, test_batchsize, batches_seen, final_batches, test_every, depth, ema_values, instances_seen)
 
