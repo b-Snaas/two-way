@@ -208,7 +208,7 @@ def evaluate_model(wandb, model, data_test, context, test_subset, test_batchsize
             if torch.cuda.is_available():
                 seed = seed.cuda()
 
-            upto = data_test.size(0) if batches_seen == final_batches else test_subset
+            upto = test_subset
             data_sub = data_test[:upto]
             bits_per_byte = util.compute_compression(
                 model, data_sub, context=context, batch_size=test_batchsize, depth=depth, ema_values=ema_values
