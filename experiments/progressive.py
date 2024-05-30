@@ -356,7 +356,7 @@ def go(
                 "learning-rate": opt.param_groups[0]['lr'],
                 "batches_seen": batches_seen,
                 "current_depth": current_depth,
-                "output-layer-loss": ground_truth_losses[output_index].item() * util.LOG2E,
+                "output-layer-loss": ground_truth_losses[-1].item() * util.LOG2E,
                 "gradient-norm": grad_norm.item()
             }
 
