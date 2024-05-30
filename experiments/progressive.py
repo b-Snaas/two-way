@@ -339,9 +339,36 @@ def go(
             scaler.step(opt)
             scaler.update()
 
-            log_training_data(wandb, opt, batches_seen, instances_seen, current_depth, ground_truth_losses, grad_norm, ema_values)
+            log_data = {
+                "learning-rate": opt.param_groups[0]['lr'],
+                "batches_seen": batches_seen,
+                "current_depth": current_depth,
+                "output-layer-loss": ground_truth_losses[-1].item() * util.LOG2E,
+                "gradient-norm": grad_norm.item()
+            }
 
-            evaluate_model(wandb, model, data_test, context, test_subset, test_batchsize, batches_seen, final_batches, test_every, depth, ema_values, instances_seen)
+            for idx, ema in enumerate(ema_values):
+                log_data[f"ema-{idx}"] = ema.value if isinstance(ema.value, (int, float)) else ema.value.item()
+
+            wandb.log(log_data, step=instances_seen)
+
+            if batches_seen % test_every == 0:
+                with torch.no_grad():
+                    seedfr = random.randint(0, data_test.size(0) - context)
+                    seed = data_test[seedfr: seedfr + context].to(torch.long)
+
+                    if torch.cuda.is_available():
+                        seed = seed.cuda()
+
+                    upto = test_subset
+                    data_sub = data_test[:upto]
+                    bits_per_byte = util.compute_compression(
+                        model, data_sub, context=context, batch_size=test_batchsize, depth=depth, ema_values=ema_values
+                    )
+
+                    print(f"epoch{batches_seen}: {bits_per_byte:.4} bits per byte")
+                    wandb.log({"transformer/validation-bits-per-byte": bits_per_byte}, step=instances_seen, commit=True)
+
 
         if depth_idx < len(depths_sequence) - 1:
             next_depth = depths_sequence[depth_idx + 1]
