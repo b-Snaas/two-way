@@ -5,13 +5,8 @@ from torch import nn
 import torch.nn.functional as F
 import torch.distributions as dist
 from torch.cuda.amp import autocast, GradScaler
-import torch.autograd.profiler as profiler
 import numpy as np
 import random, tqdm, gzip, fire, wandb
-import logging
-import gc
-
-import warnings
 
 # NB, the enwik8 data contains tokens from 9 to 240, but well round up to the nearest
 # power of two.
@@ -156,8 +151,9 @@ def update_optimizer_lr(optimizer, current_depth, batches_seen, batch_size, lr_b
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
-def prepare_batch(data_train, context, batch_size):
+def prepare_batch(data_train, context, batch_size, instances_seen):
     source, target = sample_batch(data_train, length=context, batch_size=batch_size)
+    instances_seen += source.size(0)
     if torch.cuda.is_available():
         source, target = source.cuda(), target.cuda()
     return source, target
@@ -262,17 +258,6 @@ def go(
         depth: 5e-5
     }
 
-    logger = logging.getLogger("wandb")
-    logger.setLevel(logging.DEBUG)
-
-    # Optional: Configure a stream handler for console output
-    stream_handler = logging.StreamHandler()
-    stream_handler.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    stream_handler.setFormatter(formatter)
-    logger.addHandler(stream_handler)
-
-
     wandb.init(
         project="distill-transformer",
         config={
@@ -337,7 +322,7 @@ def go(
             batch_size = batch_size_by_depth[current_depth]
 
             update_optimizer_lr(opt, current_depth, batches_seen, batch_size, lr_by_depth, warmup_steps)
-            source, target = prepare_batch(data_train, context, batch_size)
+            source, target = prepare_batch(data_train, context, batch_size, instances_seen)
 
             opt.zero_grad()
             with autocast():
