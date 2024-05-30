@@ -388,12 +388,6 @@ def go(
                 log_training_data(wandb, opt, batches_seen, instances_seen, next_depth, ground_truth_losses, grad_norm, ema_values)
                 evaluate_model(wandb, model, data_test, context, test_subset, test_batchsize, batches_seen, final_batches, test_every, depth, ema_values, instances_seen)
 
-                print(f"Current depth index: {next_depth // quarter_depth - 1}")
-                print(f"Previous depth index: {current_depth // quarter_depth - 1}")
-
-                for idx, ema in enumerate(ema_values):
-                    print(f"Layer {idx + 1}: {ema.value}")
-
                 current_ema = ema_values[next_depth // quarter_depth - 1].value
                 previous_ema = ema_values[current_depth // quarter_depth - 1].value
 
