@@ -142,13 +142,6 @@ def get_memory_usage():
     reserved = torch.cuda.memory_reserved()
     return allocated, reserved
 
-def update_optimizer_lr(optimizer, current_depth, batches_seen, batch_size, lr_by_depth, warmup_steps):
-    lr = lr_by_depth[current_depth]
-    if batches_seen < warmup_steps:
-        lr *= batches_seen / warmup_steps
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
-
 def update_ema_values(ema_values, ground_truth_losses, current_depth_index):
     if current_depth_index < len(ema_values) and current_depth_index < len(ground_truth_losses):
         ema_values[current_depth_index].update(ground_truth_losses[current_depth_index])
@@ -172,8 +165,8 @@ def go(
     gradient_clipping=1.0,
     sample_length=200,
     attention_type="default",
-    intermediate_layer_amount=10000,  # Number of batches to train each layer initially
-    final_layer_amount=50000  # Number of batches to train the final layer
+    intermediate_amount=10000,  # Number of batches to train each layer initially
+    final_amount=50000  # Number of batches to train the final layer
 ):
 
     if seed < 0:
@@ -260,9 +253,9 @@ def go(
     current_depth = quarter_depth
     depth_index = 0
     train_stage = "initial"
-    warmup_steps = intermediate_layer_amount // 2
-    total_intermediate_batches = intermediate_layer_amount * ((depth // quarter_depth) - 1)
-    total_batches = total_intermediate_batches + final_layer_amount
+    warmup_steps = intermediate_amount // 2
+    total_intermediate_batches = intermediate_amount * ((depth // quarter_depth) - 1)
+    total_batches = total_intermediate_batches + final_amount
 
     while batches_seen < total_batches:
         batches_seen += 1
@@ -346,12 +339,12 @@ def go(
         # Logic for adding layers and training stages
         if current_depth < depth:
             if train_stage == "initial":
-                if batches_seen_per_layer >= intermediate_layer_amount:
+                if batches_seen_per_layer >= intermediate_amount:
                     depth_index += 1
                     current_depth = (depth_index + 1) * quarter_depth
                     train_stage = "distill"
-                    warmup_steps = intermediate_layer_amount // 2  # Reset warmup steps for the new layer
-                    batches_seen_per_layer = 0  # Reset batches seen per layer for the new layer
+                    warmup_steps = intermediate_amount // 2
+                    batches_seen_per_layer = 0
                     print(f"Adding layer: {current_depth}")
             elif train_stage == "distill":
                 if ema_values[depth_index].value < ema_values[depth_index - 1].value:
@@ -360,18 +353,18 @@ def go(
                     print(f"Layer {current_depth} EMA has crossed previous layer EMA")
             elif train_stage == "train":
                 intermediate_batches_seen += 1
-                if intermediate_batches_seen >= intermediate_layer_amount:
+                if intermediate_batches_seen >= intermediate_amount:
                     if current_depth == depth:
                         train_stage = "final"
                     else:
                         depth_index += 1
                         current_depth = (depth_index + 1) * quarter_depth
                         train_stage = "distill"
-                        warmup_steps = intermediate_layer_amount // 2  # Reset warmup steps for the new layer
-                        batches_seen_per_layer = 0  # Reset batches seen per layer for the new layer
+                        warmup_steps = intermediate_amount // 2
+                        batches_seen_per_layer = 0
                     print(f"Adding layer: {current_depth}")
         elif train_stage == "final":
-            if batches_seen_per_layer >= final_layer_amount:
+            if batches_seen_per_layer >= final_amount:
                 print(f"Final training phase completed at batch {batches_seen}")
                 break
 
