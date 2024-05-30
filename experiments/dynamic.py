@@ -189,6 +189,7 @@ def go(
     depth=12,
     gamma=0.5,
     decay=0.5,
+    sep_layers=False,
     seed=1,
     test_every=1500,
     test_subset=100000,
@@ -249,6 +250,7 @@ def go(
             "depth": depth,
             "gamma": gamma,
             "decay": decay,
+            "sep_layers": sep_layers,
             "seed": seed,
             "gradient_clipping": gradient_clipping,
             "lr_by_depth": lr_by_depth,
@@ -274,6 +276,7 @@ def go(
         seq_length=context,
         num_tokens=NUM_TOKENS,
         attention_type=attention_type,
+        sep_layers=False
     )
     if torch.cuda.is_available():
         model.cuda()

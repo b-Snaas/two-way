@@ -177,10 +177,10 @@ def calculate_loss(model, source, target, current_depth, gamma, ema_values):
     
     return loss, teacher_loss, ground_truth_losses
 
-def update_ema_values(ema_values, ground_truth_losses):
-    for idx, ema in enumerate(ema_values):
-        if idx < len(ground_truth_losses):
-            ema.update(ground_truth_losses[idx])
+def update_ema_values(ema_values, ground_truth_losses, current_depth_index):
+    if current_depth_index < len(ema_values) and current_depth_index < len(ground_truth_losses):
+        ema_values[current_depth_index].update(ground_truth_losses[current_depth_index])
+
 
 def log_training_data(wandb, opt, batches_seen, instances_seen, current_depth, ground_truth_losses, grad_norm, ema_values):
     log_data = {
@@ -329,7 +329,7 @@ def go(
             with autocast():
                 loss, teacher_loss, ground_truth_losses = calculate_loss(model, source, target, current_depth, gamma, ema_values)
 
-            update_ema_values(ema_values, ground_truth_losses)
+            update_ema_values(ema_values, ground_truth_losses, depth_idx)
 
             scaler.scale(loss).backward()
             scaler.unscale_(opt)
@@ -345,6 +345,7 @@ def go(
 
         if depth_idx < len(depths_sequence) - 1:
             next_depth = depths_sequence[depth_idx + 1]
+            next_depth_idx = depth_idx + 1
             print(f"Distilling to next depth: {next_depth}")
 
             while True:
@@ -358,7 +359,7 @@ def go(
                 with autocast():
                     loss, teacher_loss, ground_truth_losses = calculate_loss(model, source, target, next_depth, gamma, ema_values)
 
-                update_ema_values(ema_values, ground_truth_losses)
+                update_ema_values(ema_values, ground_truth_losses, next_depth_idx)
 
                 scaler.scale(loss).backward()
                 scaler.unscale_(opt)
@@ -371,6 +372,12 @@ def go(
 
                 log_training_data(wandb, opt, batches_seen, instances_seen, next_depth, ground_truth_losses, grad_norm, ema_values)
                 evaluate_model(wandb, model, data_test, context, test_subset, test_batchsize, batches_seen, final_batches, test_every, depth, ema_values, instances_seen)
+
+                print(f"Current depth index: {next_depth // quarter_depth - 1}")
+                print(f"Previous depth index: {current_depth // quarter_depth - 1}")
+
+                for idx, ema in enumerate(ema_values):
+                    print(f"Layer {idx + 1}: {ema.value}")
 
                 current_ema = ema_values[next_depth // quarter_depth - 1].value
                 previous_ema = ema_values[current_depth // quarter_depth - 1].value
@@ -397,7 +404,7 @@ def go(
                 with autocast():
                     loss, teacher_loss, ground_truth_losses = calculate_loss(model, source, target, next_depth, gamma, ema_values)
 
-                update_ema_values(ema_values, ground_truth_losses)
+                update_ema_values(ema_values, ground_truth_losses, next_depth_idx)
 
                 scaler.scale(loss).backward()
                 scaler.unscale_(opt)
@@ -423,7 +430,7 @@ def go(
         with autocast():
             loss, teacher_loss, ground_truth_losses = calculate_loss(model, source, target, depth, gamma, ema_values)
 
-        update_ema_values(ema_values, ground_truth_losses)
+        update_ema_values(ema_values, ground_truth_losses, depth_idx)
 
         scaler.scale(loss).backward()
         scaler.unscale_(opt)
