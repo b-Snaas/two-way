@@ -353,7 +353,7 @@ def go(
                 batch_size = batch_size_by_depth[next_depth]
 
                 update_optimizer_lr(opt, next_depth, batches_seen, batch_size, lr_by_depth, warmup_steps)
-                source, target = prepare_batch(data_train, context, batch_size)
+                source, target = prepare_batch(data_train, context, batch_size, instances_seen)
 
                 opt.zero_grad()
                 with autocast():
@@ -392,7 +392,7 @@ def go(
                 batch_size = batch_size_by_depth[next_depth]
 
                 update_optimizer_lr(opt, next_depth, batches_seen, batch_size, lr_by_depth, warmup_steps)
-                source, target = prepare_batch(data_train, context, batch_size)
+                source, target = prepare_batch(data_train, context, batch_size, instances_seen)
 
                 opt.zero_grad()
                 with autocast():
@@ -418,7 +418,7 @@ def go(
         batch_size = batch_size_by_depth[depth]
 
         update_optimizer_lr(opt, depth, batches_seen, batch_size, lr_by_depth, warmup_steps)
-        source, target = prepare_batch(data_train, context, batch_size)
+        source, target = prepare_batch(data_train, context, batch_size, instances_seen)
 
         opt.zero_grad()
         with autocast():
