@@ -347,7 +347,28 @@ def go(
             scaler.step(opt)
             scaler.update()
 
-            log_training_data(wandb, opt, batches_seen, instances_seen, current_depth, ground_truth_losses, grad_norm, ema_values)
+            print(f"Learning rate: {opt.param_groups[0]['lr']}")
+            print(f"Batches seen: {batches_seen}")
+            print(f"Current depth: {current_depth}")
+            print(f"Output layer loss: {ground_truth_losses[-1].item() * util.LOG2E}")
+            print(f"Gradient norm: {grad_norm.item()}")
+
+            log_data = {
+                "learning-rate": opt.param_groups[0]['lr'],
+                "batches_seen": batches_seen,
+                "current_depth": current_depth,
+                "output-layer-loss": ground_truth_losses[-1].item() * util.LOG2E,
+                "gradient-norm": grad_norm.item()
+            }
+
+            for idx, ema in enumerate(ema_values):
+                log_data[f"ema-{idx}"] = ema.value if isinstance(ema.value, (int, float)) else ema.value.item()
+
+            print(log_data)
+            print("We are logging")
+
+            wandb.log(log_data, step=instances_seen)
+
             evaluate_model(wandb, model, data_test, context, test_subset, test_batchsize, batches_seen, final_batches, test_every, depth, ema_values, instances_seen)
 
         if depth_idx < len(depths_sequence) - 1:
