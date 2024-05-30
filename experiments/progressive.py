@@ -236,6 +236,8 @@ def go(
     context=128,
     depth=12,
     gamma=0.5,
+    decay=0.5,
+    sep_layers=False,
     seed=1,
     test_subset=100000,
     nsamples=64,
@@ -276,6 +278,8 @@ def go(
             "context": context,
             "depth": depth,
             "gamma": gamma,
+            "decay": decay,
+            "sep_layers": sep_layers,
             "seed": seed,
             "gradient_clipping": gradient_clipping,
             "lr_by_depth": lr_by_depth,
@@ -300,6 +304,7 @@ def go(
         seq_length=context,
         num_tokens=NUM_TOKENS,
         attention_type=attention_type,
+        sep_layers=sep_layers,
     )
     if torch.cuda.is_available():
         model.cuda()
@@ -347,26 +352,22 @@ def go(
             scaler.step(opt)
             scaler.update()
 
-            print(f"Learning rate: {opt.param_groups[0]['lr']}")
-            print(f"Batches seen: {batches_seen}")
-            print(f"Current depth: {current_depth}")
-            print(f"Output layer loss: {ground_truth_losses[-1].item() * util.LOG2E}")
-            print(f"Gradient norm: {grad_norm.item()}")
-
             log_data = {
                 "learning-rate": opt.param_groups[0]['lr'],
                 "batches_seen": batches_seen,
                 "current_depth": current_depth,
-                "output-layer-loss": ground_truth_losses[-1].item() * util.LOG2E,
+                "output-layer-loss": ground_truth_losses[output_index].item() * util.LOG2E,
                 "gradient-norm": grad_norm.item()
             }
 
+            for idx, loss in enumerate(ground_truth_losses):
+                log_data[f"train-loss-{idx}"] = loss.item() * util.LOG2E
+
             for idx, ema in enumerate(ema_values):
+                # Directly use ema.value if it's an int or float
                 log_data[f"ema-{idx}"] = ema.value if isinstance(ema.value, (int, float)) else ema.value.item()
 
-            print(log_data)
-            print("We are logging")
-
+            # Log the data to wandb
             wandb.log(log_data, step=instances_seen)
 
             evaluate_model(wandb, model, data_test, context, test_subset, test_batchsize, batches_seen, final_batches, test_every, depth, ema_values, instances_seen)
