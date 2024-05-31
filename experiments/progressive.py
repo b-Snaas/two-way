@@ -268,18 +268,22 @@ def go(
     total_batches = total_intermediate_batches + final_amount
     layer_batches = [intermediate_amount * (i + 1) for i in range((depth // quarter_depth) - 1)]
 
+    previous_depth_index = -1
+
     while batches_seen < total_batches:
         batches_seen += 1
         batches_seen_per_layer += 1
         if train_stage == "distill":
             distillation_batches += 1
-            # Freeze the previous output layer
-            if depth_index > 0:
-                freeze_layer(model.layers[(depth_index - 1) * quarter_depth])
+            # Freeze the previous distillation layer only if it hasn't been frozen yet
+            if depth_index > 0 and previous_depth_index != depth_index:
+                freeze_layer(model.dist_layers[depth_index - 1])
+                previous_depth_index = depth_index
         else:
-            # Unfreeze the previous output layer if it was frozen
-            if depth_index > 0:
-                unfreeze_layer(model.layers[(depth_index - 1) * quarter_depth])
+            # Unfreeze the previous distillation layer if it was frozen and the train_stage is no longer "distill"
+            if depth_index > 0 and previous_depth_index == depth_index:
+                unfreeze_layer(model.dist_layers[depth_index - 1])
+                previous_depth_index = -1
         
         batch_size = batch_size_by_depth[current_depth]
 
