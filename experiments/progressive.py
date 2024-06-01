@@ -146,13 +146,15 @@ def update_ema_values(ema_values, ground_truth_losses, current_depth_index):
     if current_depth_index < len(ema_values) and current_depth_index < len(ground_truth_losses):
         ema_values[current_depth_index].update(ground_truth_losses[current_depth_index])
 
-def freeze_layer(layer):
-    for param in layer.parameters():
-        param.requires_grad = False
+def freeze_layers(layers):
+    for layer in layers:
+        for param in layer.parameters():
+            param.requires_grad = False
 
-def unfreeze_layer(layer):
-    for param in layer.parameters():
-        param.requires_grad = True
+def unfreeze_layers(layers):
+    for layer in layers:
+        for param in layer.parameters():
+            param.requires_grad = True
 
 def go(
     data=None,
@@ -268,22 +270,20 @@ def go(
     total_batches = total_intermediate_batches + final_amount
     layer_batches = [intermediate_amount * (i + 1) for i in range((depth // quarter_depth) - 1)]
 
-    previous_depth_index = -1
-
     while batches_seen < total_batches:
         batches_seen += 1
         batches_seen_per_layer += 1
         if train_stage == "distill":
             distillation_batches += 1
-            # Freeze the previous distillation layer only if it hasn't been frozen yet
-            if depth_index > 0 and previous_depth_index != depth_index:
-                freeze_layer(model.dist_layers[depth_index - 1])
-                previous_depth_index = depth_index
+            # Freeze all layers up to and including the current distillation layer if gamma is not 0
+            if gamma != 0:
+                freeze_layers(model.tblocks[:current_depth])
+                freeze_layers([model.dist_layers[depth_index]])
         else:
-            # Unfreeze the previous distillation layer if it was frozen and the train_stage is no longer "distill"
-            if depth_index > 0 and previous_depth_index == depth_index:
-                unfreeze_layer(model.dist_layers[depth_index - 1])
-                previous_depth_index = -1
+            # Unfreeze all layers if gamma is not 0
+            if gamma != 0:
+                unfreeze_layers(model.tblocks[:current_depth])
+                unfreeze_layers([model.dist_layers[depth_index]])
         
         batch_size = batch_size_by_depth[current_depth]
 
