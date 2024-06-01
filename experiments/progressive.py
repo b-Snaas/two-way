@@ -343,7 +343,7 @@ def go(
                 target, valid_outputs, train_stage, gamma
             )
 
-        update_ema_values(ema_values, ground_truth_losses, depth_index)
+        update_ema_values(ema_values, ground_truth_losses)
         
         scaler.scale(loss).backward()
         scaler.unscale_(opt)
