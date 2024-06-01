@@ -276,6 +276,7 @@ def go(
         ema.update(1000)
 
     current_depth = quarter_depth
+    previous_depth = 0
     depth_index = 0
     train_stage = "initial"
     total_intermediate_batches = sum(intermediate_amount * (i + 1) for i in range((depth // quarter_depth) - 1))
@@ -283,41 +284,46 @@ def go(
     layer_batches = [intermediate_amount * (i + 1) for i in range((depth // quarter_depth) - 1)]
 
     prev_params = None
+    layers_frozen = False
+    layers_unfrozen = False
 
     while batches_seen < total_batches:
         batches_seen += 1
         batches_seen_per_layer += 1
+
         if train_stage == "distill":
             distillation_batches += 1
-            # Freeze all layers up to and including the current distillation layer if gamma is not 0
-            if gamma != 0:
-                tblock_layers_to_freeze = model.tblocks[:current_depth]
-                dist_layers_to_freeze = [model.dist_layers[depth_index]]
-                freeze_layers(tblock_layers_to_freeze, [f'tblock_{i}' for i in range(current_depth)])
-                freeze_layers(dist_layers_to_freeze, [f'dist_layer_{depth_index}'])
-
-                if prev_params is None:
-                    prev_params = get_layer_params(tblock_layers_to_freeze + dist_layers_to_freeze)
+            # Freeze all layers up to and including the previous distillation layer if gamma is not 0
+            if gamma != 0 and not layers_frozen:
+                tblock_layers_to_freeze = model.tblocks[:previous_depth]
+                dist_layers_to_freeze = model.dist_layers[:depth_index]
+                freeze_layers(tblock_layers_to_freeze, [f'tblock_{i}' for i in range(previous_depth)])
+                freeze_layers(dist_layers_to_freeze, [f'dist_layer_{i}' for i in range(depth_index)])
+                prev_params = get_layer_params(tblock_layers_to_freeze + dist_layers_to_freeze)
+                layers_frozen = True
+                layers_unfrozen = False
 
         else:
             # Unfreeze all layers if gamma is not 0
-            if gamma != 0:
-                tblock_layers_to_unfreeze = model.tblocks[:current_depth]
-                dist_layers_to_unfreeze = [model.dist_layers[depth_index]]
-                unfreeze_layers(tblock_layers_to_unfreeze, [f'tblock_{i}' for i in range(current_depth)])
-                unfreeze_layers(dist_layers_to_unfreeze, [f'dist_layer_{depth_index}'])
+            if gamma != 0 and not layers_unfrozen:
+                tblock_layers_to_unfreeze = model.tblocks[:previous_depth]
+                dist_layers_to_unfreeze = model.dist_layers[:depth_index]
+                unfreeze_layers(tblock_layers_to_unfreeze, [f'tblock_{i}' for i in range(previous_depth)])
+                unfreeze_layers(dist_layers_to_unfreeze, [f'dist_layer_{i}' for i in range(depth_index)])
 
                 if prev_params is not None:
                     current_params = get_layer_params(tblock_layers_to_unfreeze + dist_layers_to_unfreeze)
-                    compare_layer_params(prev_params, current_params, [f'tblock_{i}' for i in range(current_depth)] + [f'dist_layer_{depth_index}'])
+                    compare_layer_params(prev_params, current_params, [f'tblock_{i}' for i in range(previous_depth)] + [f'dist_layer_{i}' for i in range(depth_index)])
                     prev_params = None
+                layers_unfrozen = True
+                layers_frozen = False
 
         if train_stage == "distill" and prev_params is not None:
             # During distillation, continuously verify the parameters
             current_params = get_layer_params(tblock_layers_to_freeze + dist_layers_to_freeze)
-            compare_layer_params(prev_params, current_params, [f'tblock_{i}' for i in range(current_depth)] + [f'dist_layer_{depth_index}'])
+            compare_layer_params(prev_params, current_params, [f'tblock_{i}' for i in range(previous_depth)] + [f'dist_layer_{i}' for i in range(depth_index)])
             prev_params = current_params
-
+        
         batch_size = batch_size_by_depth[current_depth]
 
         update_lr(opt, current_depth, batches_seen_per_layer, batch_size, lr_by_depth, warmup_steps)
@@ -389,10 +395,12 @@ def go(
             if train_stage == "initial":
                 if batches_seen_per_layer >= layer_batches[depth_index]:
                     depth_index += 1
+                    previous_depth = current_depth
                     current_depth = (depth_index + 1) * quarter_depth
                     train_stage = "distill"
                     batches_seen_per_layer = 0
                     print(f"Adding layer: {current_depth}")
+                    layers_frozen = False  # Reset the flag for the next distillation phase
             elif train_stage == "distill":
                 if ema_values[depth_index].value < ema_values[depth_index - 1].value:
                     train_stage = "train"
@@ -405,10 +413,12 @@ def go(
                         train_stage = "final"
                     else:
                         depth_index += 1
+                        previous_depth = current_depth
                         current_depth = (depth_index + 1) * quarter_depth
                         train_stage = "distill"
                         batches_seen_per_layer = 0
                     print(f"Adding layer: {current_depth}")
+                    layers_frozen = False  # Reset the flag for the next distillation phase
         elif train_stage == "final":
             if batches_seen_per_layer >= final_amount:
                 print(f"Final training phase completed at batch {batches_seen}")
