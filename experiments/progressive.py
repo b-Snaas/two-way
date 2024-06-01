@@ -298,6 +298,7 @@ def go(
 
                 if prev_params is None:
                     prev_params = get_layer_params(tblock_layers_to_freeze + dist_layers_to_freeze)
+
         else:
             # Unfreeze all layers if gamma is not 0
             if gamma != 0:
@@ -305,11 +306,17 @@ def go(
                 dist_layers_to_unfreeze = [model.dist_layers[depth_index]]
                 unfreeze_layers(tblock_layers_to_unfreeze, [f'tblock_{i}' for i in range(current_depth)])
                 unfreeze_layers(dist_layers_to_unfreeze, [f'dist_layer_{depth_index}'])
-                
+
                 if prev_params is not None:
                     current_params = get_layer_params(tblock_layers_to_unfreeze + dist_layers_to_unfreeze)
                     compare_layer_params(prev_params, current_params, [f'tblock_{i}' for i in range(current_depth)] + [f'dist_layer_{depth_index}'])
                     prev_params = None
+
+        if train_stage == "distill" and prev_params is not None:
+            # During distillation, continuously verify the parameters
+            current_params = get_layer_params(tblock_layers_to_freeze + dist_layers_to_freeze)
+            compare_layer_params(prev_params, current_params, [f'tblock_{i}' for i in range(current_depth)] + [f'dist_layer_{depth_index}'])
+            prev_params = current_params
 
         batch_size = batch_size_by_depth[current_depth]
 
