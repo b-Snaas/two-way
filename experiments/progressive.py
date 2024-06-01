@@ -143,9 +143,9 @@ def get_memory_usage():
     reserved = torch.cuda.memory_reserved()
     return allocated, reserved
 
-def update_ema_values(ema_values, ground_truth_losses, current_depth_index):
-    if current_depth_index < len(ema_values) and current_depth_index < len(ground_truth_losses):
-        ema_values[current_depth_index].update(ground_truth_losses[current_depth_index])
+def update_ema_values(ema_values, ground_truth_losses):
+    for i in range(min(len(ema_values), len(ground_truth_losses))):
+        ema_values[i].update(ground_truth_losses[i])
 
 def freeze_layers(layers, layer_names):
     print(f"Freezing layers: {layer_names}")
@@ -403,9 +403,9 @@ def go(
                     layers_frozen = False  # Reset the flag for the next distillation phase
             elif train_stage == "distill":
                 if ema_values[depth_index].value < ema_values[depth_index - 1].value:
+                    print(f"Batch {batches_seen}: Layer {current_depth} EMA ({ema_values[depth_index].value}) has crossed previous layer EMA ({ema_values[depth_index - 1].value})")
                     train_stage = "train"
                     intermediate_batches_seen = 0
-                    print(f"Layer {current_depth} EMA has crossed previous layer EMA")
             elif train_stage == "train":
                 intermediate_batches_seen += 1
                 if intermediate_batches_seen >= layer_batches[depth_index]:
