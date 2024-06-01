@@ -7,6 +7,7 @@ import torch.distributions as dist
 from torch.cuda.amp import autocast, GradScaler
 import numpy as np
 import random, tqdm, gzip, fire, wandb
+import copy
 
 # NB, the enwik8 data contains tokens from 9 to 240, but well round up to the nearest
 # power of two.
@@ -146,15 +147,26 @@ def update_ema_values(ema_values, ground_truth_losses, current_depth_index):
     if current_depth_index < len(ema_values) and current_depth_index < len(ground_truth_losses):
         ema_values[current_depth_index].update(ground_truth_losses[current_depth_index])
 
-def freeze_layers(layers):
+def freeze_layers(layers, layer_names):
+    print(f"Freezing layers: {layer_names}")
     for layer in layers:
         for param in layer.parameters():
             param.requires_grad = False
 
-def unfreeze_layers(layers):
+def unfreeze_layers(layers, layer_names):
+    print(f"Unfreezing layers: {layer_names}")
     for layer in layers:
         for param in layer.parameters():
             param.requires_grad = True
+
+def get_layer_params(layers):
+    return [copy.deepcopy(layer.state_dict()) for layer in layers]
+
+def compare_layer_params(before, after, layer_names):
+    for b, a, name in zip(before, after, layer_names):
+        for key in b.keys():
+            if not torch.equal(b[key], a[key]):
+                print(f"Layer {name} parameter {key} has changed.")
 
 def go(
     data=None,
@@ -270,6 +282,8 @@ def go(
     total_batches = total_intermediate_batches + final_amount
     layer_batches = [intermediate_amount * (i + 1) for i in range((depth // quarter_depth) - 1)]
 
+    prev_params = None
+
     while batches_seen < total_batches:
         batches_seen += 1
         batches_seen_per_layer += 1
@@ -277,14 +291,26 @@ def go(
             distillation_batches += 1
             # Freeze all layers up to and including the current distillation layer if gamma is not 0
             if gamma != 0:
-                freeze_layers(model.tblocks[:current_depth])
-                freeze_layers([model.dist_layers[depth_index]])
+                tblock_layers_to_freeze = model.tblocks[:current_depth]
+                dist_layers_to_freeze = [model.dist_layers[depth_index]]
+                freeze_layers(tblock_layers_to_freeze, [f'tblock_{i}' for i in range(current_depth)])
+                freeze_layers(dist_layers_to_freeze, [f'dist_layer_{depth_index}'])
+
+                if prev_params is None:
+                    prev_params = get_layer_params(tblock_layers_to_freeze + dist_layers_to_freeze)
         else:
             # Unfreeze all layers if gamma is not 0
             if gamma != 0:
-                unfreeze_layers(model.tblocks[:current_depth])
-                unfreeze_layers([model.dist_layers[depth_index]])
-        
+                tblock_layers_to_unfreeze = model.tblocks[:current_depth]
+                dist_layers_to_unfreeze = [model.dist_layers[depth_index]]
+                unfreeze_layers(tblock_layers_to_unfreeze, [f'tblock_{i}' for i in range(current_depth)])
+                unfreeze_layers(dist_layers_to_unfreeze, [f'dist_layer_{depth_index}'])
+                
+                if prev_params is not None:
+                    current_params = get_layer_params(tblock_layers_to_unfreeze + dist_layers_to_unfreeze)
+                    compare_layer_params(prev_params, current_params, [f'tblock_{i}' for i in range(current_depth)] + [f'dist_layer_{depth_index}'])
+                    prev_params = None
+
         batch_size = batch_size_by_depth[current_depth]
 
         update_lr(opt, current_depth, batches_seen_per_layer, batch_size, lr_by_depth, warmup_steps)
