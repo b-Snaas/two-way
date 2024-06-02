@@ -147,14 +147,14 @@ def update_ema_values(ema_values, ground_truth_losses):
     for i in range(min(len(ema_values), len(ground_truth_losses))):
         ema_values[i].update(ground_truth_losses[i])
 
-def freeze_layers(layers, layer_names):
-    print(f"Freezing layers: {layer_names}")
+def freeze_layers(layers, layer_names, batch):
+    print(f"Freezing layers: {layer_names} at batch {batch}")
     for layer in layers:
         for param in layer.parameters():
             param.requires_grad = False
 
-def unfreeze_layers(layers, layer_names):
-    print(f"Unfreezing layers: {layer_names}")
+def unfreeze_layers(layers, layer_names, batch):
+    print(f"Unfreezing layers: {layer_names} at batch {batch}")
     for layer in layers:
         for param in layer.parameters():
             param.requires_grad = True
@@ -309,8 +309,8 @@ def go(
             if gamma != 0 and not layers_frozen:
                 tblock_layers_to_freeze = model.tblocks[:previous_depth]
                 dist_layers_to_freeze = model.dist_layers[:depth_index]
-                freeze_layers(tblock_layers_to_freeze, [f'tblock_{i}' for i in range(previous_depth)])
-                freeze_layers(dist_layers_to_freeze, [f'dist_layer_{i}' for i in range(depth_index)])
+                freeze_layers(tblock_layers_to_freeze, [f'tblock_{i}' for i in range(previous_depth)], batches_seen)
+                freeze_layers(dist_layers_to_freeze, [f'dist_layer_{i}' for i in range(depth_index)], batches_seen)
                 prev_params = get_layer_params(tblock_layers_to_freeze + dist_layers_to_freeze)
                 layers_frozen = True
                 layers_unfrozen = False
@@ -320,8 +320,8 @@ def go(
             if gamma != 0 and not layers_unfrozen:
                 tblock_layers_to_unfreeze = model.tblocks[:previous_depth]
                 dist_layers_to_unfreeze = model.dist_layers[:depth_index]
-                unfreeze_layers(tblock_layers_to_unfreeze, [f'tblock_{i}' for i in range(previous_depth)])
-                unfreeze_layers(dist_layers_to_unfreeze, [f'dist_layer_{i}' for i in range(depth_index)])
+                unfreeze_layers(tblock_layers_to_unfreeze, [f'tblock_{i}' for i in range(previous_depth)], batches_seen)
+                unfreeze_layers(dist_layers_to_unfreeze, [f'dist_layer_{i}' for i in range(depth_index)], batches_seen)
 
                 if prev_params is not None:
                     current_params = get_layer_params(tblock_layers_to_unfreeze + dist_layers_to_unfreeze)
@@ -410,7 +410,7 @@ def go(
                 current_depth = (depth_index + 1) * quarter_depth
                 train_stage = "distill"
                 batches_seen_per_layer = 0
-                print(f"Adding layer: {current_depth}")
+                print(f"Batch {batches_seen}: Adding layer: {current_depth}")
                 layers_frozen = False
         elif train_stage == "distill":
             if ema_values[depth_index].value < ema_values[depth_index - 1].value:
@@ -429,7 +429,7 @@ def go(
                 current_depth = (depth_index + 1) * quarter_depth
                 train_stage = "distill"
                 batches_seen_per_layer = 0
-                print(f"Adding layer: {current_depth}")
+                print(f"Batch {batches_seen}: Adding layer: {current_depth}")
                 layers_frozen = False
         elif train_stage == "final":
             if batches_seen_per_layer >= final_amount:
