@@ -297,7 +297,11 @@ def go(
         if train_stage == "distill":
             distillation_batches += 1
             total_batches += 1
-            gamma = gamma_schedule[depth_index][batches_seen_per_layer - 1]
+            if batches_seen_per_layer <= len(gamma_schedule[depth_index]):
+                gamma = gamma_schedule[depth_index][batches_seen_per_layer - 1]
+            else:
+                gamma = 0.0
+                
             # Freeze all layers up to and including the previous distillation layer if gamma is not 0
             if gamma != 0 and not layers_frozen:
                 tblock_layers_to_freeze = model.tblocks[:previous_depth]
