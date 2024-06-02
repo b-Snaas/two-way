@@ -301,7 +301,7 @@ def go(
                 gamma = gamma_schedule[depth_index][batches_seen_per_layer - 1]
             else:
                 gamma = 0.0
-                
+
             # Freeze all layers up to and including the previous distillation layer if gamma is not 0
             if gamma != 0 and not layers_frozen:
                 tblock_layers_to_freeze = model.tblocks[:previous_depth]
@@ -400,7 +400,6 @@ def go(
                     step=instances_seen,
                 )
 
-
         if train_stage == "initial":
             if batches_seen_per_layer >= layer_batches[depth_index]:
                 depth_index += 1
@@ -417,17 +416,16 @@ def go(
                 intermediate_batches_seen = 0
         elif train_stage == "train":
             intermediate_batches_seen += 1
-            if intermediate_batches_seen >= layer_batches[depth_index]:
-                if current_depth == depth:
-                    train_stage = "final"
-                else:
-                    depth_index += 1
-                    previous_depth = current_depth
-                    current_depth = (depth_index + 1) * quarter_depth
-                    train_stage = "distill"
-                    batches_seen_per_layer = 0
+            if current_depth == depth:
+                train_stage = "final"
+            elif intermediate_batches_seen >= layer_batches[depth_index]:
+                depth_index += 1
+                previous_depth = current_depth
+                current_depth = (depth_index + 1) * quarter_depth
+                train_stage = "distill"
+                batches_seen_per_layer = 0
                 print(f"Adding layer: {current_depth}")
-                layers_frozen = False  # Reset the flag for the next distillation phase
+                layers_frozen = False
         elif train_stage == "final":
             if batches_seen_per_layer >= final_amount:
                 print(f"Final training phase completed at batch {batches_seen}")
@@ -435,3 +433,5 @@ def go(
 
 if __name__ == "__main__":
     fire.Fire(go)
+
+    
