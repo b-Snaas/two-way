@@ -287,12 +287,17 @@ def go(
     layers_frozen = False
     layers_unfrozen = False
 
+    gamma_schedule = {i: [gamma - (gamma * j / layer_batches[i]) for j in range(layer_batches[i])] for i in range(len(layer_batches))}
+    gamma_schedule[len(layer_batches)] = [0] * final_amount
+
     while batches_seen < total_batches:
         batches_seen += 1
         batches_seen_per_layer += 1
 
         if train_stage == "distill":
             distillation_batches += 1
+            total_batches += 1
+            gamma = gamma_schedule[depth_index][batches_seen_per_layer - 1]
             # Freeze all layers up to and including the previous distillation layer if gamma is not 0
             if gamma != 0 and not layers_frozen:
                 tblock_layers_to_freeze = model.tblocks[:previous_depth]
@@ -360,7 +365,8 @@ def go(
             "batches_seen": batches_seen,
             "current_depth": current_depth,
             "output-layer-loss": ground_truth_losses[-1].item() * util.LOG2E,
-            "gradient-norm": grad_norm.item()
+            "gradient-norm": grad_norm.item(),
+            "gamma": gamma
         }
 
         for idx, loss in enumerate(ground_truth_losses):
@@ -390,35 +396,34 @@ def go(
                     step=instances_seen,
                 )
 
-        # Logic for adding layers and training stages
-        if current_depth < depth:
-            if train_stage == "initial":
-                if batches_seen_per_layer >= layer_batches[depth_index]:
+
+        if train_stage == "initial":
+            if batches_seen_per_layer >= layer_batches[depth_index]:
+                depth_index += 1
+                previous_depth = current_depth
+                current_depth = (depth_index + 1) * quarter_depth
+                train_stage = "distill"
+                batches_seen_per_layer = 0
+                print(f"Adding layer: {current_depth}")
+                layers_frozen = False  # Reset the flag for the next distillation phase
+        elif train_stage == "distill":
+            if ema_values[depth_index].value < ema_values[depth_index - 1].value:
+                print(f"Batch {batches_seen}: Layer {current_depth} EMA ({ema_values[depth_index].value}) has crossed previous layer EMA ({ema_values[depth_index - 1].value})")
+                train_stage = "train"
+                intermediate_batches_seen = 0
+        elif train_stage == "train":
+            intermediate_batches_seen += 1
+            if intermediate_batches_seen >= layer_batches[depth_index]:
+                if current_depth == depth:
+                    train_stage = "final"
+                else:
                     depth_index += 1
                     previous_depth = current_depth
                     current_depth = (depth_index + 1) * quarter_depth
                     train_stage = "distill"
                     batches_seen_per_layer = 0
-                    print(f"Adding layer: {current_depth}")
-                    layers_frozen = False  # Reset the flag for the next distillation phase
-            elif train_stage == "distill":
-                if ema_values[depth_index].value < ema_values[depth_index - 1].value:
-                    print(f"Batch {batches_seen}: Layer {current_depth} EMA ({ema_values[depth_index].value}) has crossed previous layer EMA ({ema_values[depth_index - 1].value})")
-                    train_stage = "train"
-                    intermediate_batches_seen = 0
-            elif train_stage == "train":
-                intermediate_batches_seen += 1
-                if intermediate_batches_seen >= layer_batches[depth_index]:
-                    if current_depth == depth:
-                        train_stage = "final"
-                    else:
-                        depth_index += 1
-                        previous_depth = current_depth
-                        current_depth = (depth_index + 1) * quarter_depth
-                        train_stage = "distill"
-                        batches_seen_per_layer = 0
-                    print(f"Adding layer: {current_depth}")
-                    layers_frozen = False  # Reset the flag for the next distillation phase
+                print(f"Adding layer: {current_depth}")
+                layers_frozen = False  # Reset the flag for the next distillation phase
         elif train_stage == "final":
             if batches_seen_per_layer >= final_amount:
                 print(f"Final training phase completed at batch {batches_seen}")
