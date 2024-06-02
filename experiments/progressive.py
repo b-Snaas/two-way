@@ -408,7 +408,7 @@ def go(
                 train_stage = "distill"
                 batches_seen_per_layer = 0
                 print(f"Adding layer: {current_depth}")
-                layers_frozen = False  # Reset the flag for the next distillation phase
+                layers_frozen = False
         elif train_stage == "distill":
             if ema_values[depth_index].value < ema_values[depth_index - 1].value:
                 print(f"Batch {batches_seen}: Layer {current_depth} EMA ({ema_values[depth_index].value}) has crossed previous layer EMA ({ema_values[depth_index - 1].value})")
@@ -418,6 +418,8 @@ def go(
             intermediate_batches_seen += 1
             if current_depth == depth:
                 train_stage = "final"
+                batches_seen_per_layer = 0
+                print("Final training phase")
             elif intermediate_batches_seen >= layer_batches[depth_index]:
                 depth_index += 1
                 previous_depth = current_depth
