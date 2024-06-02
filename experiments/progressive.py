@@ -294,6 +294,9 @@ def go(
         batches_seen += 1
         batches_seen_per_layer += 1
 
+        if train_stage != "distill":
+            current_gamma = 0.0
+
         if train_stage == "distill":
             distillation_batches += 1
             total_batches += 1
