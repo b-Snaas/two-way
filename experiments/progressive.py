@@ -298,9 +298,9 @@ def go(
             distillation_batches += 1
             total_batches += 1
             if batches_seen_per_layer <= len(gamma_schedule[depth_index]):
-                gamma = gamma_schedule[depth_index][batches_seen_per_layer - 1]
+                current_gamma = gamma_schedule[depth_index][batches_seen_per_layer - 1]
             else:
-                gamma = 0.0
+                current_gamma = 0.0
 
             # Freeze all layers up to and including the previous distillation layer if gamma is not 0
             if gamma != 0 and not layers_frozen:
@@ -349,7 +349,7 @@ def go(
             valid_outputs = [output for output in outputs if output is not None]
 
             loss, ground_truth_losses = progressive_distill_loss(
-                target, valid_outputs, train_stage, gamma
+                target, valid_outputs, train_stage, current_gamma
             )
 
         update_ema_values(ema_values, ground_truth_losses)
@@ -370,7 +370,7 @@ def go(
             "current_depth": current_depth,
             "output-layer-loss": ground_truth_losses[-1].item() * util.LOG2E,
             "gradient-norm": grad_norm.item(),
-            "gamma": gamma
+            "gamma": current_gamma
         }
 
         for idx, loss in enumerate(ground_truth_losses):
