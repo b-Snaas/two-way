@@ -575,7 +575,7 @@ def dynamic_distill_loss(target, y_outputs, gamma, ema_values):
     return loss, teacher_loss, losses
 
 
-def progressive_distill_loss(target, outputs, train_stage, gamma, temperature=1.5):
+def progressive_distill_loss(target, outputs, train_stage, gamma):
     """
     Compute the loss based on the current training stage.
     
@@ -584,7 +584,6 @@ def progressive_distill_loss(target, outputs, train_stage, gamma, temperature=1.
     - outputs: A list of the model's intermediate output logits at specified layers.
     - train_stage: The current training stage (initial, train, distill).
     - gamma: Weight factor for the distillation loss.
-    - temperature: Temperature used for distillation loss.
     
     Returns:
     - The computed loss for backpropagation.
@@ -604,9 +603,8 @@ def progressive_distill_loss(target, outputs, train_stage, gamma, temperature=1.
         if train_stage == "distill" and idx == len(outputs) - 1 and len(outputs) > 1:
             teacher_output = outputs[idx - 1]
             teacher_out = teacher_output.transpose(2, 1).detach()
-            teacher_probs = F.softmax(teacher_out / temperature, dim=1)
-            student_logits = transposed_output / temperature
-            distill_loss = F.kl_div(F.log_softmax(student_logits, dim=1), teacher_probs, reduction="batchmean") * (temperature ** 2)
+            teacher_probs = F.softmax(teacher_out, dim=1)
+            distill_loss = F.cross_entropy(transposed_output, teacher_probs, reduction="mean")
             combined_loss = (1 - gamma) * ground_truth_loss + gamma * distill_loss
             student_loss = combined_loss
 
@@ -616,6 +614,7 @@ def progressive_distill_loss(target, outputs, train_stage, gamma, temperature=1.
         loss = losses[-1]
 
     return loss, losses
+
 
 def ema_update(old, new, beta=0.50):
     """ Update the exponential moving average (EMA) with a new data point. """
