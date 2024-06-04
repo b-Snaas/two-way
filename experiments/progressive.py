@@ -390,7 +390,7 @@ def go(
                 if torch.cuda.is_available():
                     seed = seed.cuda()
 
-                upto = data_test.size(0) if batches_seen == total_batches else test_subset
+                upto = test_subset
                 data_sub = data_test[:upto]
                 bits_per_byte = util.compute_compression(
                     model, data_sub, context=context, batch_size=test_batchsize, depth=depth, ema_values=ema_values
