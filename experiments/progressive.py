@@ -324,7 +324,6 @@ def go(
                 unfreeze_layers(dist_layers_to_unfreeze, [f'dist_layer_{i}' for i in range(depth_index)], batches_seen)
 
                 if prev_params is not None:
-                    print("Comparing after unfreezing")
                     current_params = get_layer_params(tblock_layers_to_unfreeze + dist_layers_to_unfreeze)
                     compare_layer_params(prev_params, current_params, [f'tblock_{i}' for i in range(previous_depth)] + [f'dist_layer_{i}' for i in range(depth_index)])
                     prev_params = None
@@ -332,8 +331,6 @@ def go(
                 layers_frozen = False
 
         if train_stage == "distill" and prev_params is not None:
-            print("Comparing during distillation")
-            # During distillation, continuously verify the parameters
             current_params = get_layer_params(tblock_layers_to_freeze + dist_layers_to_freeze)
             compare_layer_params(prev_params, current_params, [f'tblock_{i}' for i in range(previous_depth)] + [f'dist_layer_{i}' for i in range(depth_index)])
             prev_params = current_params
