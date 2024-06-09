@@ -1,9 +1,9 @@
-from former import util, GTransformer
-from former.util import here
 import torch
-from torch import nn
+import torch.nn as nn
 import torch.nn.functional as F
 import torch.distributions as dist
+from former import util, GTransformer
+from former.util import here
 from torch.cuda.amp import autocast, GradScaler
 import numpy as np
 import random, tqdm, gzip, fire, wandb
@@ -197,6 +197,24 @@ def go(
     else:
         print("No GPU available, using CPU")
 
+    # Load pre-trained model for distillation
+    if pre_trained_model_path:
+        state_dict = torch.load(pre_trained_model_path)
+        # Determine depth by inspecting the keys of the state dictionary
+        teacher_depth = len([key for key in state_dict.keys() if 'tblocks' in key and 'attention.tokeys.weight' in key])
+        pre_trained_model = GTransformer(
+            emb=embedding_size,
+            heads=num_heads,
+            depth=teacher_depth,
+            seq_length=context,
+            num_tokens=NUM_TOKENS,
+            attention_type=attention_type,
+        )
+        pre_trained_model.load_state_dict(state_dict)
+        pre_trained_model.eval()
+        if torch.cuda.is_available():
+            pre_trained_model.cuda()
+
     # create the model
     model = GTransformer(
         emb=embedding_size,
@@ -208,21 +226,6 @@ def go(
     )
     if torch.cuda.is_available():
         model.cuda()
-
-    # Load pre-trained model for distillation
-    if pre_trained_model_path:
-        pre_trained_model = GTransformer(
-            emb=embedding_size,
-            heads=num_heads,
-            depth=depth,
-            seq_length=context,
-            num_tokens=NUM_TOKENS,
-            attention_type=attention_type,
-        )
-        pre_trained_model.load_state_dict(torch.load(pre_trained_model_path))
-        pre_trained_model.eval()
-        if torch.cuda.is_available():
-            pre_trained_model.cuda()
 
     opt = torch.optim.Adam(lr=lr_min, params=model.parameters())
 
