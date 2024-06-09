@@ -1,5 +1,5 @@
 from former import util, TransformerBlock
-from former.util import here
+from former.util import here, d
 import torch
 from torch import nn
 import torch.nn.functional as F
