@@ -1,4 +1,4 @@
-from former import util, GTransformer
+from former import util, TransformerBlock
 from former.util import here
 import torch
 from torch import nn
@@ -11,6 +11,47 @@ import random, tqdm, gzip, fire, wandb
 # NB, the enwik8 data contains tokens from 9 to 240, but well round up to the nearest
 # power of two.
 NUM_TOKENS = 256
+
+class GTransformer(nn.Module):
+    """
+    Transformer for generating text (character by character).
+    """
+
+    def __init__(self, emb, heads, depth, seq_length, num_tokens, attention_type='default'):
+        super().__init__()
+
+        self.num_tokens = num_tokens
+
+        self.token_embedding = nn.Embedding(embedding_dim=emb, num_embeddings=num_tokens)
+        self.pos_embedding = nn.Embedding(embedding_dim=emb, num_embeddings=seq_length)
+
+        self.toprobs = nn.Linear(emb, num_tokens)
+
+        tblocks = []
+        for _ in range(depth):
+            tblocks.append(
+                TransformerBlock(emb=emb, heads=heads, seq_length=seq_length, mask=True, attention_type=attention_type)
+            )
+
+        self.tblocks = nn.ModuleList(modules=tblocks)
+
+    def forward(self, x):
+        """
+        :param x: A (batch, sequence length) integer tensor of token indices.
+        :return: predicted log-probability vectors for each token based on the preceding tokens.
+        """
+        tokens = self.token_embedding(x)
+        b, t, e = tokens.size()
+
+        positions = self.pos_embedding(torch.arange(t, device=d()))[None, :, :].expand(b, t, e)
+        x = tokens + positions
+
+        for i, block in enumerate(self.tblocks):
+            x = block(x)
+
+        x = self.toprobs(x)
+
+        return x
 
 def sample(lnprobs, temperature=1.0):
     """
@@ -229,7 +270,7 @@ def go(
         # Wrap the forward pass in an autocast context
         with autocast():
             output = model(source)  # forward pass
-            loss = F.nll_loss(output.transpose(2, 1), target, reduction="mean")
+            loss = F.cross_entropy(output.transpose(2, 1), target, reduction="mean")
 
         # Scale the loss and perform backward pass
         scaler.scale(loss).backward()
