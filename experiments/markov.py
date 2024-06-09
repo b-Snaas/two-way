@@ -1,3 +1,4 @@
+import os
 import torch
 import numpy as np
 import gzip
@@ -99,6 +100,7 @@ def markov(train, val, test, max_order=3, lambdas=[1.0, 0.1 , 0.01, 0.0001, 1e-6
 
 # Function to save the model
 def save_model(models, filename):
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
     with open(filename, 'wb') as f:
         pickle.dump(models, f)
     print(f"Model saved to {filename}")
