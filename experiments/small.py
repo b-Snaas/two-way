@@ -12,7 +12,6 @@ import random, tqdm, gzip, fire, wandb
 # power of two.
 NUM_TOKENS = 256
 
-
 def sample(lnprobs, temperature=1.0):
     """
     Sample an element from a categorical distribution
@@ -30,7 +29,6 @@ def sample(lnprobs, temperature=1.0):
 
     return cd.sample()
 
-
 def enwik8(path, n_train=int(90e6), n_valid=int(5e6), n_test=int(5e6)):
     """
     Load the enwik8 dataset from the Hutter challenge.
@@ -41,7 +39,6 @@ def enwik8(path, n_train=int(90e6), n_valid=int(5e6), n_test=int(5e6)):
         X = np.frombuffer(data, dtype=np.uint8).copy()
         trX, vaX, teX = np.split(X, [n_train, n_train + n_valid])
     return torch.from_numpy(trX), torch.from_numpy(vaX), torch.from_numpy(teX)
-
 
 def sample_batch(data, length, batch_size):
     """
@@ -72,7 +69,6 @@ def sample_batch(data, length, batch_size):
     # -- Note that we add a singleton dimenson to each vector, s[None.,:], and then concatenate along that dimension.
 
     return inputs, target
-
 
 def sample_sequence(
     model, seed, max_context, length=600, temperature=0.5, verbose=False
@@ -118,6 +114,11 @@ def sample_sequence(
     print()
     return seed
 
+# Define a function to save the model's state dictionary
+def save_model(model, path):
+    torch.save(model.state_dict(), path)
+    print(f"Model saved to {path}")
+
 # Define a function to get memory usage
 def get_memory_usage():
     allocated = torch.cuda.memory_allocated()
@@ -144,6 +145,7 @@ def go(
     gradient_clipping=1.0,
     sample_length=200,
     attention_type="default",
+    model_save_path="./models/model.pt",
 ):
 
     if seed < 0:
@@ -297,6 +299,8 @@ def go(
 
                 # -- 0.9 bit per byte is around the state of the art.
 
+    # Save the model at the end of training
+    save_model(model, model_save_path)
 
 if __name__ == "__main__":
     fire.Fire(go)
