@@ -106,7 +106,7 @@ def save_model(models, filename):
 # Main script
 def main():
     data_path = "data/enwik8.gz"  # Adjust the path as necessary
-    model_filename = "markov_model.pkl"  # File to save the model
+    model_filename = "model/markov_model.pkl"  # File to save the model
 
     data_train, data_val, data_test = enwik8(data_path)
 
