@@ -152,7 +152,7 @@ def go(
     gradient_clipping=1.0,
     sample_length=200,
     attention_type="default",
-    model_save_path="./models/model.pt"
+    model_save_path="./model/model.pt"
 ):
 
     if seed < 0:
