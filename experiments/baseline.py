@@ -8,8 +8,7 @@ from torch.cuda.amp import autocast, GradScaler
 import numpy as np
 import random, tqdm, gzip, fire, wandb
 
-# NB, the enwik8 data contains tokens from 9 to 240, but well round up to the nearest
-# power of two.
+# NB, the enwik8 data contains tokens from 9 to 240, but we'll round up to the nearest power of two.
 NUM_TOKENS = 256
 
 
@@ -61,7 +60,7 @@ def sample_batch(data, length, batch_size):
 
     # Slice out the input sequences
     seqs_inputs = [data[start : start + length] for start in starts]
-    # -- the start index is the one we just sampled, and the end is exactly 'lentgh' positions after that.
+    # -- the start index is the one we just sampled, and the end is exactly 'length' positions after that.
     seqs_target = [data[start + 1 : start + length + 1] for start in starts]
     # -- The target is the same sequence as input, except one character ahead (we are asking the model to predict the
     #    next character at each position)
@@ -69,7 +68,7 @@ def sample_batch(data, length, batch_size):
     # We now have two lists of torch vectors, which we can concatenate into matrices of batch_size-by-length
     inputs = torch.cat([s[None, :] for s in seqs_inputs], dim=0).to(torch.long)
     target = torch.cat([s[None, :] for s in seqs_target], dim=0).to(torch.long)
-    # -- Note that we add a singleton dimenson to each vector, s[None.,:], and then concatenate along that dimension.
+    # -- Note that we add a singleton dimension to each vector, s[None.,:], and then concatenate along that dimension.
 
     return inputs, target
 
@@ -132,7 +131,7 @@ def go(
     lr_min=1e-4,
     lr_max=3e-4,
     peak=0.2,
-    anneal= "cos",
+    anneal="cos",
     tb_dir="./runs",
     final=False,
     embedding_size=768,
@@ -147,6 +146,8 @@ def go(
     gradient_clipping=1.0,
     sample_length=200,
     attention_type="default",
+    pre_trained_model_path=None,
+    gamma=1.0,
 ):
 
     if seed < 0:
@@ -208,6 +209,21 @@ def go(
     if torch.cuda.is_available():
         model.cuda()
 
+    # Load pre-trained model for distillation
+    if pre_trained_model_path:
+        pre_trained_model = GTransformer(
+            emb=embedding_size,
+            heads=num_heads,
+            depth=depth,
+            seq_length=context,
+            num_tokens=NUM_TOKENS,
+            attention_type=attention_type,
+        )
+        pre_trained_model.load_state_dict(torch.load(pre_trained_model_path))
+        pre_trained_model.eval()
+        if torch.cuda.is_available():
+            pre_trained_model.cuda()
+
     opt = torch.optim.Adam(lr=lr_min, params=model.parameters())
 
     sch = torch.optim.lr_scheduler.OneCycleLR(
@@ -238,6 +254,14 @@ def go(
         with autocast():
             output = model(source)  # forward pass
             loss = F.nll_loss(output.transpose(2, 1), target, reduction="mean")
+
+            if pre_trained_model_path:
+                with torch.no_grad():
+                    pre_trained_output = pre_trained_model(source)
+                out = pre_trained_output.transpose(2, 1).detach()
+                outp = F.softmax(out, dim=1)
+                distill_loss = F.cross_entropy(output.transpose(2, 1), outp, reduction='mean')
+                loss += gamma * distill_loss
 
         # Scale the loss and perform backward pass
         scaler.scale(loss).backward()
