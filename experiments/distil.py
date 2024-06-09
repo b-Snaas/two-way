@@ -7,6 +7,7 @@ from former.util import here, d
 from torch.cuda.amp import autocast, GradScaler
 import numpy as np
 import random, tqdm, gzip, fire, wandb
+import pickle
 
 # NB, the enwik8 data contains tokens from 9 to 240, but we'll round up to the nearest power of two.
 NUM_TOKENS = 256
@@ -52,6 +53,24 @@ class GTransformer(nn.Module):
 
         return x
 
+def load_markov_model(filename):
+    with open(filename, 'rb') as f:
+        models = pickle.load(f)
+    print(f"Markov model loaded from {filename}")
+    return models
+
+def get_batch_next_symbol_probabilities(models, contexts, numtokens, smoothing):
+    order = 4  # We are using the 4th order model
+    ngrams = [''.join([chr(tok) for tok in context]) for context in contexts]
+    model = models[order]
+
+    # Get counts of possible next symbols for each ngram in the batch
+    batch_counts = np.array([[model.get(ngram + chr(i), 0) for i in range(numtokens)] for ngram in ngrams])
+
+    # Apply smoothing
+    batch_probabilities = (batch_counts + smoothing[order]) / (batch_counts.sum(axis=1, keepdims=True) + smoothing[order] * numtokens)
+
+    return batch_probabilities
 
 def sample(lnprobs, temperature=1.0):
     """
@@ -70,7 +89,6 @@ def sample(lnprobs, temperature=1.0):
 
     return cd.sample()
 
-
 def enwik8(path, n_train=int(90e6), n_valid=int(5e6), n_test=int(5e6)):
     """
     Load the enwik8 dataset from the Hutter challenge.
@@ -81,7 +99,6 @@ def enwik8(path, n_train=int(90e6), n_valid=int(5e6), n_test=int(5e6)):
         X = np.frombuffer(data, dtype=np.uint8).copy()
         trX, vaX, teX = np.split(X, [n_train, n_train + n_valid])
     return torch.from_numpy(trX), torch.from_numpy(vaX), torch.from_numpy(teX)
-
 
 def sample_batch(data, length, batch_size):
     """
@@ -113,10 +130,7 @@ def sample_batch(data, length, batch_size):
 
     return inputs, target
 
-
-def sample_sequence(
-    model, seed, max_context, length=600, temperature=0.5, verbose=False
-):
+def sample_sequence(model, seed, max_context, length=600, temperature=0.5, verbose=False):
     """
     Sequentially samples a sequence from the model, token by token.
 
@@ -164,7 +178,6 @@ def get_memory_usage():
     reserved = torch.cuda.memory_reserved()
     return allocated, reserved
 
-
 def go(
     num_batches=1_000_000,
     batch_size=32,
@@ -188,6 +201,8 @@ def go(
     sample_length=200,
     attention_type="default",
     pre_trained_model_path=None,
+    markov_model_path=None,
+    distillation_mode=None,
     gamma=1.0,
 ):
 
@@ -212,7 +227,7 @@ def go(
         },
     )
 
-    # load the data (validation unless final is true, then test)
+    # Load the data (validation unless final is true, then test)
     data = here("data/enwik8.gz") if data is None else data
 
     data_train, data_val, data_test = enwik8(data)
@@ -256,7 +271,12 @@ def go(
         if torch.cuda.is_available():
             pre_trained_model.cuda()
 
-    # create the model
+    # Load the 4-gram Markov model
+    if distillation_mode == "markov":
+        markov_models = load_markov_model(markov_model_path)
+        smoothing = [1.0, 0.1, 0.01, 0.0001, 0.00001]  # Smoothing parameters for different orders
+
+    # Create the model
     model = GTransformer(
         emb=embedding_size,
         heads=num_heads,
@@ -299,12 +319,24 @@ def go(
             output = model(source)  # forward pass
             loss = F.cross_entropy(output.transpose(2, 1), target, reduction="mean")
 
-            if pre_trained_model_path:
+            if distillation_mode == "pre_trained" and pre_trained_model_path:
                 with torch.no_grad():
                     pre_trained_output = pre_trained_model(source)
                 out = pre_trained_output.transpose(2, 1).detach()
                 outp = F.softmax(out, dim=1)
                 distill_loss = F.cross_entropy(output.transpose(2, 1), outp, reduction='mean')
+                loss += gamma * distill_loss
+
+            elif distillation_mode == "markov":
+                # Extract the last 4 characters for each sequence in the batch
+                contexts = source[:, -4:].cpu().numpy()
+                # Get the probabilities for all possible next symbols for each context in the batch
+                markov_probs = get_batch_next_symbol_probabilities(markov_models, contexts, NUM_TOKENS, smoothing)
+                markov_probs = torch.tensor(markov_probs).to(source.device)
+                # Cast markov_probs to Long type
+                markov_probs = markov_probs.long()
+                # Compute the distillation loss in a vectorized way
+                distill_loss = F.cross_entropy(output.transpose(2, 1), markov_probs, reduction='mean')
                 loss += gamma * distill_loss
 
         # Scale the loss and perform backward pass
@@ -374,7 +406,6 @@ def go(
                 )
 
                 # -- 0.9 bit per byte is around the state of the art.
-
 
 if __name__ == "__main__":
     fire.Fire(go)
