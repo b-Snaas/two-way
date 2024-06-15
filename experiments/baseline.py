@@ -272,44 +272,44 @@ def go(
         # Log the data
         wandb.log(log_data, step=instances_seen)
 
-        # # Validate every `test_every` steps. First we compute the
-        # # compression on the validation data (or a subset),
-        # # then we generate some random text to monitor progress.
-        # if i != 0 and (i % test_every == 0 or i == num_batches - 1):
-        #     with torch.no_grad():
+        # Validate every `test_every` steps. First we compute the
+        # compression on the validation data (or a subset),
+        # then we generate some random text to monitor progress.
+        if i != 0 and (i % test_every == 0 or i == num_batches - 1):
+            with torch.no_grad():
 
-        #         ## Sample and print a random sequence
+                ## Sample and print a random sequence
 
-        #         # Slice a random seed from the test data, and sample a continuation from the model.
-        #         seedfr = random.randint(0, data_test.size(0) - context)
-        #         seed = data_test[seedfr : seedfr + context].to(torch.long)
+                # Slice a random seed from the test data, and sample a continuation from the model.
+                seedfr = random.randint(0, data_test.size(0) - context)
+                seed = data_test[seedfr : seedfr + context].to(torch.long)
 
-        #         if torch.cuda.is_available():
-        #             seed = seed.cuda()
+                if torch.cuda.is_available():
+                    seed = seed.cuda()
 
-        #         sample_sequence(
-        #             model,
-        #             seed=seed,
-        #             max_context=context,
-        #             verbose=True,
-        #             length=sample_length,
-        #         )
+                sample_sequence(
+                    model,
+                    seed=seed,
+                    max_context=context,
+                    verbose=True,
+                    length=sample_length,
+                )
 
-        #         ## Compute validation bits per byte
+                ## Compute validation bits per byte
 
-        #         upto = data_test.size(0) if i == num_batches - 1 else test_subset
-        #         data_sub = data_test[:upto]
-        #         bits_per_byte = util.compute_compression(
-        #             model, data_sub, context=context, batch_size=test_batchsize, depth=depth
-        #         )
-        #         # -- Since we're not computing gradients, we can increase the batch size a little from what we used in
-        #         #    training.
+                upto = data_test.size(0) if i == num_batches - 1 else test_subset
+                data_sub = data_test[:upto]
+                bits_per_byte = util.compute_compression(
+                    model, data_sub, context=context, batch_size=test_batchsize, depth=depth
+                )
+                # -- Since we're not computing gradients, we can increase the batch size a little from what we used in
+                #    training.
 
-        #         print(f"epoch{i}: {bits_per_byte:.4} bits per byte")
-        #         wandb.log(
-        #             {"transformer/validation-bits-per-byte": bits_per_byte},
-        #             step=instances_seen,
-        #         )
+                print(f"epoch{i}: {bits_per_byte:.4} bits per byte")
+                wandb.log(
+                    {"transformer/validation-bits-per-byte": bits_per_byte},
+                    step=instances_seen,
+                )
 
                 # -- 0.9 bit per byte is around the state of the art.
     # Save the model at the end of training
