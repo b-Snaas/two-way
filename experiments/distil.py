@@ -253,22 +253,22 @@ def go(
     else:
         print("No GPU available, using CPU")
 
-    # # Load pre-trained model for distillation
-    # if pre_trained_model_path:
-    #     state_dict = torch.load(pre_trained_model_path)
-    #     # Determine depth by inspecting the keys of the state dictionary
-    #     pre_trained_model = GTransformer(
-    #         emb=embedding_size,
-    #         heads=num_heads,
-    #         depth=depth,
-    #         seq_length=context,
-    #         num_tokens=NUM_TOKENS,
-    #         attention_type=attention_type,
-    #     )
-    #     pre_trained_model.load_state_dict(state_dict)
-    #     pre_trained_model.eval()
-    #     if torch.cuda.is_available():
-    #         pre_trained_model.cuda()
+    # Load pre-trained model for distillation
+    if pre_trained_model_path and distillation_mode == "pre_trained":
+        state_dict = torch.load(pre_trained_model_path)
+        # Determine depth by inspecting the keys of the state dictionary
+        pre_trained_model = GTransformer(
+            emb=embedding_size,
+            heads=num_heads,
+            depth=depth,
+            seq_length=context,
+            num_tokens=NUM_TOKENS,
+            attention_type=attention_type,
+        )
+        pre_trained_model.load_state_dict(state_dict)
+        pre_trained_model.eval()
+        if torch.cuda.is_available():
+            pre_trained_model.cuda()
 
     # Load the 4-gram Markov model
     if distillation_mode == "markov":

@@ -152,7 +152,7 @@ def go(
     gradient_clipping=1.0,
     sample_length=200,
     attention_type="default",
-    model_save_path="./model/model.pt"
+    model_save_path=None
 ):
 
     if seed < 0:
@@ -313,7 +313,8 @@ def go(
 
                 # -- 0.9 bit per byte is around the state of the art.
     # Save the model at the end of training
-    save_model(model, model_save_path)
+    if model_save_path is not None:
+        save_model(model, model_save_path)
 
 if __name__ == "__main__":
     fire.Fire(go)
