@@ -59,8 +59,8 @@ def load_markov_model(filename):
     print(f"Markov model loaded from {filename}")
     return models
 
-def get_batch_next_symbol_probabilities(models, contexts, numtokens, smoothing):
-    order = 4  # We are using the 4th order model
+def get_batch_char_probs(models, contexts, numtokens, smoothing):
+    order = 4
     ngrams = [''.join([chr(tok) for tok in context]) for context in contexts]
     model = models[order]
 
@@ -257,11 +257,10 @@ def go(
     if pre_trained_model_path:
         state_dict = torch.load(pre_trained_model_path)
         # Determine depth by inspecting the keys of the state dictionary
-        teacher_depth = len([key for key in state_dict.keys() if 'tblocks' in key and 'attention.tokeys.weight' in key])
         pre_trained_model = GTransformer(
             emb=embedding_size,
             heads=num_heads,
-            depth=teacher_depth,
+            depth=depth,
             seq_length=context,
             num_tokens=NUM_TOKENS,
             attention_type=attention_type,
@@ -274,7 +273,7 @@ def go(
     # Load the 4-gram Markov model
     if distillation_mode == "markov":
         markov_models = load_markov_model(markov_model_path)
-        smoothing = [1.0, 0.1, 0.01, 0.0001, 0.00001]  # Smoothing parameters for different orders
+        smoothing = [1.0, 0.1, 0.01, 0.0001, 0.00001]
 
     # Create the model
     model = GTransformer(
@@ -317,7 +316,7 @@ def go(
         # Wrap the forward pass in an autocast context
         with autocast():
             output = model(source)  # forward pass
-            loss = F.cross_entropy(output.transpose(2, 1), target, reduction="mean")
+            initial_loss = F.cross_entropy(output.transpose(2, 1), target, reduction="mean")
 
             if distillation_mode == "pre_trained" and pre_trained_model_path:
                 with torch.no_grad():
@@ -325,19 +324,22 @@ def go(
                 out = pre_trained_output.transpose(2, 1).detach()
                 outp = F.softmax(out, dim=1)
                 distill_loss = F.cross_entropy(output.transpose(2, 1), outp, reduction='mean')
-                loss += gamma * distill_loss
+                loss = (1 - gamma) * initial_loss + gamma * distill_loss
 
             elif distillation_mode == "markov":
                 # Extract the last 4 characters for each sequence in the batch
                 contexts = source[:, -4:].cpu().numpy()
                 # Get the probabilities for all possible next symbols for each context in the batch
-                markov_probs = get_batch_next_symbol_probabilities(markov_models, contexts, NUM_TOKENS, smoothing)
+                markov_probs = get_batch_char_probs(markov_models, contexts, NUM_TOKENS, smoothing)
                 markov_probs = torch.tensor(markov_probs).to(source.device)
                 # Cast markov_probs to Long type
                 markov_probs = markov_probs.long()
                 # Compute the distillation loss in a vectorized way
                 distill_loss = F.cross_entropy(output.transpose(2, 1), markov_probs, reduction='mean')
-                loss += gamma * distill_loss
+                loss = (1 - gamma) * initial_loss + gamma * distill_loss
+
+            else:
+                loss = initial_loss  # Handle the case where no distillation is applied
 
         # Scale the loss and perform backward pass
         scaler.scale(loss).backward()
