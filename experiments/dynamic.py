@@ -51,7 +51,7 @@ def sample_batch(data, length, batch_size):
     """
     Takes the data (a single sequence of tokens) and slices out a batch of subsequences to provide as input to the model.
 
-    For each input instance, it also slices out the sequence that is shofted one position to the right, to provide as a
+    For each input instance, it also slices out the sequence that is shifted one position to the right, to provide as a
     target for the model.
 
     :param data: The (training) data. A single vector of tokens represented by integers
@@ -228,10 +228,10 @@ def go(
     elif depth == 24:
 
         batch_size_by_depth = {
-            quarter_depth: 230,
-            2 * quarter_depth: 130,
-            3 * quarter_depth: 85,
-            depth: 65
+            quarter_depth: 1,
+            2 * quarter_depth: 1,
+            3 * quarter_depth: 1,
+            depth: 1
         }
 
         lr_by_depth = {
@@ -312,6 +312,9 @@ def go(
 
         # Prepare the batch
         source, target = sample_batch(data_train, length=context, batch_size=batch_size)
+
+        print(f"source: {source}")
+        print(f"target: {target}")
         instances_seen += source.size(0)
 
         # Move data to GPU if available
