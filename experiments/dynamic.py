@@ -228,10 +228,10 @@ def go(
     elif depth == 24:
 
         batch_size_by_depth = {
-            quarter_depth: 1,
-            2 * quarter_depth: 1,
-            3 * quarter_depth: 1,
-            depth: 1
+            quarter_depth: 230,
+            2 * quarter_depth: 130,
+            3 * quarter_depth: 85,
+            depth: 65
         }
 
         lr_by_depth = {
@@ -312,9 +312,6 @@ def go(
 
         # Prepare the batch
         source, target = sample_batch(data_train, length=context, batch_size=batch_size)
-
-        print(f"source: {source}")
-        print(f"target: {target}")
         instances_seen += source.size(0)
 
         # Move data to GPU if available
