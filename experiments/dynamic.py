@@ -189,6 +189,8 @@ def go(
     depth=12,
     gamma=0.5,
     decay=0.5,
+    subseq_length=3,
+    num_subseq=5,
     sep_layers=False,
     seed=1,
     test_every=1500,
@@ -333,7 +335,7 @@ def go(
             current_ema_values = [ema.value for ema in ema_values[:len(valid_outputs)]]
 
             if len(valid_outputs) > 1:
-                loss, teacher_loss, ground_truth_losses = dynamic_distill_loss(target, valid_outputs, gamma=current_gamma, ema_values=current_ema_values)
+                loss, teacher_loss, ground_truth_losses, student_loss = dynamic_distill_loss(target, valid_outputs, gamma=current_gamma, ema_values=current_ema_values, subseq_length=subseq_length, num_subseq=num_subseq)
             else:
                 loss = F.cross_entropy(valid_outputs[0].transpose(2, 1), target, reduction="mean")
                 teacher_loss = loss
@@ -363,9 +365,15 @@ def go(
         scaler.step(opt)
         scaler.update()
 
+        if student_loss is not None:
+            sloss = student_loss.item()
+        else:
+            sloss = 0.0
+
         # Update EMAs and log data
         ema_values = [ema1, ema2, ema3, ema4]
         log_data = {
+            "student-loss": sloss,
             "learning-rate": opt.param_groups[0]['lr'],
             "batches_seen": batches_seen,
             "current_depth": current_depth,
