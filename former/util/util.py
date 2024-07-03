@@ -518,13 +518,14 @@ def distill_loss(output, target, y_outputs, gamma):
 
 def dynamic_distill_loss(target, y_outputs, gamma, ema_values, subseq_length=10, num_subseq=5):
     print(f"Target shape: {target.shape}")
-    print(f"y_outputs shape: {[y.shape for y in y_outputs]}")
     
     # Find the index of the output with the lowest EMA value to use as the teacher
     teacher_index = ema_values.index(min(ema_values))
+    print(f"Teacher index: {teacher_index}")
 
     # Use the output with the lowest EMA as the teacher
     teacher_output = y_outputs[teacher_index]
+    print(f"Teacher output shape: {teacher_output.shape}")
 
     # Compute the teacher loss first
     teacher_loss = F.cross_entropy(teacher_output.transpose(2, 1), target, reduction="mean")
@@ -541,7 +542,7 @@ def dynamic_distill_loss(target, y_outputs, gamma, ema_values, subseq_length=10,
 
     # Compute distillation and ground truth losses for each y_output
     for idx, y in enumerate(y_outputs):
-        
+
         if idx == teacher_index:
             # Append the previously computed teacher ground truth loss
             losses.append(teacher_loss)
@@ -554,29 +555,37 @@ def dynamic_distill_loss(target, y_outputs, gamma, ema_values, subseq_length=10,
             # Randomly choose start indices for subsequences
             starts = torch.randint(0, target_length - subseq_length + 1, (num_subseq,))
             print(f"Starts shape: {starts.shape}")
-            
+            print(f"Starts: {starts}")
+
             # Create index tensor for gathering subsequences
             indices = starts[:, None, None] + torch.arange(subseq_length)[None, :, None]
             indices = indices.expand(-1, -1, batch_size).permute(2, 1, 0)
             print(f"Indices shape: {indices.shape}")
+            print(f"Indices: {indices}")
 
             # Extract subsequences for teacher and student
             teacher_seqs = torch.gather(teacher_out.permute(0, 2, 1), 1, indices.to(teacher_out.device))
             student_seqs = torch.gather(y.permute(0, 2, 1), 1, indices.to(y.device))
             print(f"Teacher seqs shape: {teacher_seqs.shape}")
+            print(f"Teacher seqs:\n{teacher_seqs}")
             print(f"Student seqs shape: {student_seqs.shape}")
+            print(f"Student seqs:\n{student_seqs}")
 
             # Compute log probabilities
             teacher_log_probs = F.log_softmax(teacher_seqs, dim=2)
             student_log_probs = F.log_softmax(student_seqs, dim=2)
             print(f"Teacher log probs shape: {teacher_log_probs.shape}")
+            print(f"Teacher log probs:\n{teacher_log_probs}")
             print(f"Student log probs shape: {student_log_probs.shape}")
+            print(f"Student log probs:\n{student_log_probs}")
 
             # Compute sequence probabilities
             teacher_seq_probs = torch.exp(teacher_log_probs.sum(dim=1))
             student_seq_log_probs = student_log_probs.sum(dim=1)
             print(f"Teacher seq probs shape: {teacher_seq_probs.shape}")
+            print(f"Teacher seq probs:\n{teacher_seq_probs}")
             print(f"Student seq log probs shape: {student_seq_log_probs.shape}")
+            print(f"Student seq log probs:\n{student_seq_log_probs}")
 
             # Compute KL divergence for all subsequences
             kl_div = -(teacher_seq_probs * student_seq_log_probs).sum(dim=1).mean()
@@ -588,6 +597,7 @@ def dynamic_distill_loss(target, y_outputs, gamma, ema_values, subseq_length=10,
     loss = losses[-1] + gamma * student_loss
 
     return loss, teacher_loss, losses, student_loss
+
 
 def progressive_distill_loss(target, outputs, train_stage, gamma):
     """
