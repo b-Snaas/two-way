@@ -595,8 +595,8 @@ def subseq_distill_loss(target, y_outputs, gamma, ema_values, subseq_length=10, 
     student_loss = 0
     losses = []
 
-    batch_size, vocab_size, target_length = teacher_out.shape
-    print(f"Batch size: {batch_size}, Vocab size: {vocab_size}, Target length: {target_length}")
+    batch_size, target_length, vocab_size = teacher_out.shape
+    print(f"Batch size: {batch_size}, Target length: {target_length}, Vocab size: {vocab_size}")
 
     # Compute distillation and ground truth losses for each y_output
     for idx, y in enumerate(y_outputs):

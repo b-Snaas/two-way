@@ -373,7 +373,8 @@ def go(
             "batches_seen": batches_seen,
             "current_depth": current_depth,
             "output-layer-loss": ground_truth_losses[output_index].item() * util.LOG2E,
-            "gradient-norm": grad_norm.item()
+            "gradient-norm": grad_norm.item(),
+            "gamma": current_gamma
         }
 
         for idx, loss in enumerate(ground_truth_losses):
