@@ -1,5 +1,5 @@
 from former import util, TwowayGen
-from former.util import here, dynamic_distill_loss
+from former.util import here, subseq_distill_loss
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -189,6 +189,8 @@ def go(
     depth=12,
     gamma=0.5,
     decay=0.5,
+    subseq_length=3,
+    num_subseq=100,
     sep_layers=False,
     seed=1,
     test_every=1500,
@@ -228,10 +230,10 @@ def go(
     elif depth == 24:
 
         batch_size_by_depth = {
-            quarter_depth: 1,
-            2 * quarter_depth: 1,
-            3 * quarter_depth: 1,
-            depth: 1
+            quarter_depth: 10,
+            2 * quarter_depth: 10,
+            3 * quarter_depth: 10,
+            depth: 10
         }
 
         lr_by_depth = {
@@ -300,6 +302,8 @@ def go(
 
     ema_values = [ema1, ema2, ema3, ema4]
 
+    student_loss = None
+
     for i in tqdm.trange(num_batches):
         batches_seen += 1
         current_depth = get_layer_depth(batches_seen, num_batches, depth)
@@ -312,9 +316,6 @@ def go(
 
         # Prepare the batch
         source, target = sample_batch(data_train, length=context, batch_size=batch_size)
-
-        print(f"source: {source}")
-        print(f"target: {target}")
         instances_seen += source.size(0)
 
         # Move data to GPU if available
@@ -336,7 +337,7 @@ def go(
             current_ema_values = [ema.value for ema in ema_values[:len(valid_outputs)]]
 
             if len(valid_outputs) > 1:
-                loss, teacher_loss, ground_truth_losses = dynamic_distill_loss(target, valid_outputs, gamma=current_gamma, ema_values=current_ema_values)
+                loss, teacher_loss, ground_truth_losses, student_loss = subseq_distill_loss(target, valid_outputs, gamma=current_gamma, ema_values=current_ema_values, subseq_length=subseq_length, num_subseq=num_subseq)
             else:
                 loss = F.cross_entropy(valid_outputs[0].transpose(2, 1), target, reduction="mean")
                 teacher_loss = loss
@@ -366,14 +367,21 @@ def go(
         scaler.step(opt)
         scaler.update()
 
+        if student_loss is not None:
+            sloss = student_loss.item()
+        else:
+            sloss = 0.0
+
         # Update EMAs and log data
         ema_values = [ema1, ema2, ema3, ema4]
         log_data = {
+            "student-loss": sloss,
             "learning-rate": opt.param_groups[0]['lr'],
             "batches_seen": batches_seen,
             "current_depth": current_depth,
             "output-layer-loss": ground_truth_losses[output_index].item() * util.LOG2E,
-            "gradient-norm": grad_norm.item()
+            "gradient-norm": grad_norm.item(),
+            "gamma": current_gamma
         }
 
         for idx, loss in enumerate(ground_truth_losses):
