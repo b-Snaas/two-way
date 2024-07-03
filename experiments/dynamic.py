@@ -145,12 +145,12 @@ def update_lr(opt, current_depth, step, batch_size, lr_by_depth, warmup_steps):
 
 def get_layer_depth(batch_num, num_batches, depth):
     quarter_depth = depth // 4
-    phases = [0.25, 0.5, 0.75, 1.0]
+    phases = [0.1, 0.2, 0.3, 0.4]
     weights = [
-        [0.6, 0.2, 0.1, 0.1],
-        [0.4, 0.3, 0.2, 0.1],
-        [0.1, 0.2, 0.3, 0.4],
-        [0.0, 0.1, 0.2, 0.7]  
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0]  
     ]
     # Safeguard against the ratio exactly equalling 1.0
     phase_index = next((i for i, phase in enumerate(phases) if batch_num / num_batches <= phase), len(phases) - 1)
