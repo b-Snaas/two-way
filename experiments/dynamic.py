@@ -302,6 +302,8 @@ def go(
 
     ema_values = [ema1, ema2, ema3, ema4]
 
+    student_loss = None
+
     for i in tqdm.trange(num_batches):
         batches_seen += 1
         current_depth = get_layer_depth(batches_seen, num_batches, depth)
