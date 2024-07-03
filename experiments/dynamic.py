@@ -228,10 +228,10 @@ def go(
     elif depth == 24:
 
         batch_size_by_depth = {
-            quarter_depth: 1,
-            2 * quarter_depth: 1,
-            3 * quarter_depth: 1,
-            depth: 1
+            quarter_depth: 230,
+            2 * quarter_depth: 130,
+            3 * quarter_depth: 85,
+            depth: 65
         }
 
         lr_by_depth = {
