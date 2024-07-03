@@ -190,7 +190,7 @@ def go(
     gamma=0.5,
     decay=0.5,
     subseq_length=3,
-    num_subseq=5,
+    num_subseq=100,
     sep_layers=False,
     seed=1,
     test_every=1500,

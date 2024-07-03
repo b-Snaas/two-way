@@ -539,46 +539,50 @@ def dynamic_distill_loss(target, y_outputs, gamma, ema_values, subseq_length=10,
     batch_size, vocab_size, target_length = teacher_out.shape
     print(f"Batch size: {batch_size}, Vocab size: {vocab_size}, Target length: {target_length}")
 
+    # Compute distillation and ground truth losses for each y_output
     for idx, y in enumerate(y_outputs):
-            if idx == teacher_index:
-                losses.append(teacher_loss)
-            else:
-                ground_truth_loss = F.cross_entropy(y.transpose(2, 1), target, reduction="mean")
-                losses.append(ground_truth_loss)
+        
+        if idx == teacher_index:
+            # Append the previously computed teacher ground truth loss
+            losses.append(teacher_loss)
+        else:
+            # Compute direct ground truth loss for the current intermediate output
+            ground_truth_loss = F.cross_entropy(y.transpose(2, 1), target, reduction="mean")
+            losses.append(ground_truth_loss)
 
-                # Compute distillation loss on subsequences
-                # Randomly choose start indices for subsequences
-                starts = torch.randint(0, target_length - subseq_length + 1, (batch_size, num_subseq))
-                print(f"Starts shape: {starts.shape}")
-                
-                # Create index tensor for gathering subsequences
-                indices = starts[:, :, None, None] + torch.arange(subseq_length, device=starts.device)[None, None, :, None]
-                indices = indices.expand(batch_size, num_subseq, subseq_length, vocab_size).to(y.device)
-                print(f"Indices shape: {indices.shape}")
+            # Compute distillation loss on subsequences
+            # Randomly choose start indices for subsequences
+            starts = torch.randint(0, target_length - subseq_length + 1, (num_subseq,))
+            print(f"Starts shape: {starts.shape}")
+            
+            # Create index tensor for gathering subsequences
+            indices = starts[:, None, None] + torch.arange(subseq_length)[None, :, None]
+            indices = indices.expand(-1, -1, batch_size).permute(2, 1, 0)
+            print(f"Indices shape: {indices.shape}")
 
-                # Extract subsequences for teacher and student
-                teacher_seqs = torch.gather(teacher_out, 2, indices)
-                student_seqs = torch.gather(y, 2, indices)
-                print(f"Teacher seqs shape: {teacher_seqs.shape}")
-                print(f"Student seqs shape: {student_seqs.shape}")
+            # Extract subsequences for teacher and student
+            teacher_seqs = torch.gather(teacher_out.permute(0, 2, 1), 1, indices.to(teacher_out.device))
+            student_seqs = torch.gather(y.permute(0, 2, 1), 1, indices.to(y.device))
+            print(f"Teacher seqs shape: {teacher_seqs.shape}")
+            print(f"Student seqs shape: {student_seqs.shape}")
 
-                # Compute log probabilities
-                teacher_log_probs = F.log_softmax(teacher_seqs, dim=3)
-                student_log_probs = F.log_softmax(student_seqs, dim=3)
-                print(f"Teacher log probs shape: {teacher_log_probs.shape}")
-                print(f"Student log probs shape: {student_log_probs.shape}")
+            # Compute log probabilities
+            teacher_log_probs = F.log_softmax(teacher_seqs, dim=2)
+            student_log_probs = F.log_softmax(student_seqs, dim=2)
+            print(f"Teacher log probs shape: {teacher_log_probs.shape}")
+            print(f"Student log probs shape: {student_log_probs.shape}")
 
-                # Compute sequence probabilities
-                teacher_seq_probs = torch.exp(teacher_log_probs.sum(dim=2))
-                student_seq_log_probs = student_log_probs.sum(dim=2)
-                print(f"Teacher seq probs shape: {teacher_seq_probs.shape}")
-                print(f"Student seq log probs shape: {student_seq_log_probs.shape}")
+            # Compute sequence probabilities
+            teacher_seq_probs = torch.exp(teacher_log_probs.sum(dim=1))
+            student_seq_log_probs = student_log_probs.sum(dim=1)
+            print(f"Teacher seq probs shape: {teacher_seq_probs.shape}")
+            print(f"Student seq log probs shape: {student_seq_log_probs.shape}")
 
-                # Compute KL divergence for all subsequences
-                kl_div = -(teacher_seq_probs * student_seq_log_probs).sum(dim=2).mean()
-                print(f"KL divergence: {kl_div.item()}")
+            # Compute KL divergence for all subsequences
+            kl_div = -(teacher_seq_probs * student_seq_log_probs).sum(dim=1).mean()
+            print(f"KL divergence: {kl_div.item()}")
 
-                student_loss += kl_div
+            student_loss += kl_div
 
     # Scale the combined student losses with gamma and add to deepest loss
     loss = losses[-1] + gamma * student_loss
