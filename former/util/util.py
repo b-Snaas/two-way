@@ -516,7 +516,7 @@ def distill_loss(output, target, y_outputs, gamma):
     return loss, teacher_loss, student_losses
 
 
-def dynamic_distill_loss(target, y_outputs, gamma, ema_values, seq_length=10, num_samples=5):
+def dynamic_distill_loss(target, y_outputs, gamma, ema_values, subseq_length=10, num_subseq=5):
     print(f"Target shape: {target.shape}")
     print(f"y_outputs shape: {[y.shape for y in y_outputs]}")
     
@@ -548,12 +548,12 @@ def dynamic_distill_loss(target, y_outputs, gamma, ema_values, seq_length=10, nu
 
                 # Compute distillation loss on subsequences
                 # Randomly choose start indices for subsequences
-                starts = torch.randint(0, target_length - seq_length + 1, (batch_size, num_samples))
+                starts = torch.randint(0, target_length - subseq_length + 1, (batch_size, num_subseq))
                 print(f"Starts shape: {starts.shape}")
                 
                 # Create index tensor for gathering subsequences
-                indices = starts[:, :, None, None] + torch.arange(seq_length)[None, None, :, None]
-                indices = indices.expand(batch_size, num_samples, seq_length, vocab_size)
+                indices = starts[:, :, None, None] + torch.arange(subseq_length)[None, None, :, None]
+                indices = indices.expand(batch_size, num_subseq, subseq_length, vocab_size)
                 print(f"Indices shape: {indices.shape}")
 
                 # Extract subsequences for teacher and student
