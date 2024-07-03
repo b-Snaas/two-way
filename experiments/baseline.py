@@ -297,7 +297,7 @@ def go(
 
                 ## Compute validation bits per byte
 
-                upto = data_test.size(0) if i == num_batches - 1 else test_subset
+                upto = test_subset
                 data_sub = data_test[:upto]
                 bits_per_byte = util.compute_compression(
                     model, data_sub, context=context, batch_size=test_batchsize, depth=depth
