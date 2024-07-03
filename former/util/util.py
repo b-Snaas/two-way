@@ -518,10 +518,10 @@ def distill_loss(output, target, y_outputs, gamma):
 
 def dynamic_distill_loss(target, y_outputs, gamma, ema_values, subseq_length=10, num_subseq=5):
     print(f"Target shape: {target.shape}")
+    print(f"Targets:\n{target}")
     
     # Find the index of the output with the lowest EMA value to use as the teacher
     teacher_index = ema_values.index(min(ema_values))
-    print(f"Teacher index: {teacher_index}")
 
     # Use the output with the lowest EMA as the teacher
     teacher_output = y_outputs[teacher_index]
