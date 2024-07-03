@@ -552,8 +552,8 @@ def dynamic_distill_loss(target, y_outputs, gamma, ema_values, subseq_length=10,
                 print(f"Starts shape: {starts.shape}")
                 
                 # Create index tensor for gathering subsequences
-                indices = starts[:, :, None, None] + torch.arange(subseq_length)[None, None, :, None]
-                indices = indices.expand(batch_size, num_subseq, subseq_length, vocab_size)
+                indices = starts[:, :, None, None] + torch.arange(subseq_length, device=starts.device)[None, None, :, None]
+                indices = indices.expand(batch_size, num_subseq, subseq_length, vocab_size).to(y.device)
                 print(f"Indices shape: {indices.shape}")
 
                 # Extract subsequences for teacher and student
