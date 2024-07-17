@@ -145,18 +145,17 @@ def update_lr(opt, current_depth, step, batch_size, lr_by_depth, warmup_steps):
 
 def get_layer_depth(batch_num, num_batches, depth):
     quarter_depth = depth // 4
-    phases = [0.1, 0.2, 0.3, 0.4]
+    phases = [0.1, 0.3, 0.6]
     weights = [
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0]
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0]
     ]
     # Safeguard against the ratio exactly equalling 1.0
     phase_index = next((i for i, phase in enumerate(phases) if batch_num / num_batches <= phase), len(phases) - 1)
     current_weights = weights[phase_index]
     chosen_depth = np.random.choice(
-        [quarter_depth, 2 * quarter_depth, 3 * quarter_depth, depth],
+        [quarter_depth, 2 * quarter_depth, depth],
         p=current_weights
     )
     return chosen_depth
@@ -230,14 +229,12 @@ def go(
         batch_size_by_depth = {
             quarter_depth: 230,
             2 * quarter_depth: 130,
-            3 * quarter_depth: 85,
             depth: 65
         }
 
         lr_by_depth = {
             quarter_depth: 5e-4,
             2 * quarter_depth: 3e-4,
-            3 * quarter_depth: 1e-4,
             depth: 5e-5
         }
 
